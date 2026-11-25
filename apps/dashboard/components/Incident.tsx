@@ -7,6 +7,9 @@ import type { Evidence, Incident as Inc, Playbook, PlaybookRow, Recovery } from 
 // healthySince → seconds. `probe.healthyFor` from the controller is the *required* duration (playbook healthy_for), not elapsed.
 const secs = (since: string) => `${Math.max(0, Math.round((Date.now() - Date.parse(since)) / 1000))}s`;
 
+// Same codes as lib/sarvam.ts LANGS (that file is server-only, so the list is repeated here).
+const REPORT_LANGS = [["en", "English"], ["hi", "हिन्दी"], ["mr", "मराठी"], ["kn", "ಕನ್ನಡ"], ["ta", "தமிழ்"], ["te", "తెలుగు"], ["bn", "বাংলা"], ["gu", "ગુજરાતી"]];
+
 const STEPS = ["Investigating", "Mitigated", "Recovering", "Resolved", "Closed"] as const;
 
 // Why Advance is disabled, using only fields the controller sends (CONTRACTS §3.4).
@@ -27,6 +30,7 @@ export default function Incident({ id, initial }: { id: string; initial: Loaded<
   const { data: ev } = usePoll<Evidence>(inc?.recovery ? `incidents/${encodeURIComponent(id)}/evidence` : null, undefined, 10000);
   const { busy, note, run } = useAction();
   const [closing, setClosing] = useState("");
+  const [lang, setLang] = useState("en");
 
   if (!inc) return (
     <>
@@ -224,6 +228,21 @@ export default function Incident({ id, initial }: { id: string; initial: Loaded<
               <div className="row">
                 <a className="btn" href={`/api/c/incidents/${id}/evidence`} download={`${id}-evidence.json`}>Download JSON</a>
                 <a className="btn" href={`/api/c/incidents/${id}/evidence?format=csv`} download={`${id}-evidence.csv`}>Download CSV</a>
+              </div>
+            </section>
+          )}
+
+          {f && (
+            <section className="card">
+              <h2>Report</h2>
+              <p className="muted" style={{ margin: "4px 0 12px" }}>A4 incident report to print or save as PDF. Other languages are machine-translated by Sarvam; NuBi's findings stay in the original English.</p>
+              <div className="row">
+                <label style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>Language
+                  <select value={lang} onChange={(e) => setLang(e.target.value)}>
+                    {REPORT_LANGS.map(([c, n]) => <option key={c} value={c}>{n}</option>)}
+                  </select>
+                </label>
+                <a className="btn" href={`/incidents/${encodeURIComponent(id)}/report?lang=${lang}`} target="_blank" rel="noreferrer">Open report ↗</a>
               </div>
             </section>
           )}

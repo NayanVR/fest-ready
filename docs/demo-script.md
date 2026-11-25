@@ -2,7 +2,7 @@
 
 Stage script for `RUNBOOK.md` §4. Button and panel names are the real dashboard labels. Spoken lines are in quotes: say them short, in your own words.
 
-Timings come from the 24 Nov rehearsal (`RUNBOOK.md` §4). Re-time everything after the 25 Nov rebuild and edit this file where the numbers differ. Where a label could differ from the build (Grafana panel names, NudgeBee menu names), the script says "check at rehearsal".
+Timings come from the 24 Nov rehearsal and the 25 Nov cluster run (`RUNBOOK.md` §4). Re-time everything after the 25 Nov rebuild and edit this file where the numbers differ. Where a label could differ from the build (Grafana panel names, NudgeBee menu names), the script says "check at rehearsal".
 
 ## Pick a mode
 
@@ -17,19 +17,19 @@ The real run is longer than a 5–7 min slot, because NuBi alone takes ~5–6 mi
 
 | T | Beat | You click | Audience sees |
 |---|---|---|---|
-| −2:00 | 0 Pre-flight | reset (RUNBOOK §3), open tabs | clean Overview, no incidents |
+| −2:00 | 0 Pre-flight | reset (RUNBOOK §3), log in as `admin`, open tabs | clean Overview, no incidents |
 | 0:00 | 1 Outage | Demo controls → Provider b → **Start outage** | pill "outage on" |
 | ~1:30 | 2 Alert | Overview → incident ID | incident **Investigating**, no recommendation |
 | 1:30–5:30 | 3 NuBi gap | NudgeBee, Playbooks, Grafana | NuBi working; the playbook; the evidence |
 | ~5:30 | 4 Findings | read the Findings card | NuBi's summary, playbook, **Approve** |
 | ~6:00 | 5 Approve | **Approve** | **Mitigated**; Mumbai pickup only |
 | ~7:00 | 6 Provider fixed | Demo controls → **Clear outage** | probe dots go green; "ok … of 60s needed" |
-| ~8:15 | 7 Canary | **Start recovery at 5%**, then **Advance to …%** | split % rises; samples, guardrail |
+| ~8:15 | 7 Canary | **Start recovery at 5%** (one click) | split % climbs 5 → 10 → 50 → 100 by itself (~2½ min); samples, guardrail |
 | ~9:30 | 8 Rollback (Full only) | **Start outage** during 50% | guardrail breach → 0%, **Mitigated**, cooldown |
-| ~13:00 | 9 Resolve | **Finish recovery (fallback off)** | **Resolved**; 100% on delivery |
-| ~13:30 | 10 Close | closing note → **Close incident** | **Closed**; impact numbers |
+| ~11:00 | 9 Resolve | none (automatic) | **Resolved**; 100% on delivery, fallback off |
+| ~11:30 | 10 Close | closing note → **Close incident** | **Closed**; impact numbers |
 
-Short mode skips beat 8: it ends about 10:45 after T, so the on-stage part runs from ~4:30 to ~10:45, about 6 min.
+Short mode skips beat 8: it ends about 11:30 after T, so the on-stage part runs from ~4:30 to ~11:30, about 7 min. Re-time at rehearsal; the automatic ladder is ~130–170 s (25 Nov rehearsal 2: outage → NuBi findings +5:11, Approve +5:20, ladder 133 s, closed +12:18).
 
 ---
 
@@ -38,7 +38,8 @@ Short mode skips beat 8: it ends about 10:45 after T, so the on-stage part runs 
 - Reset per `RUNBOOK.md` §3: outages cleared, fresh controller DB, `make load-start`. Flagsmith is normal (Mumbai fallback on, split 0).
 - `sh infra/nudgebee/tunnels.sh` is running in its own terminal.
 - Tabs, in this order: **Overview** (`:3000`), **Demo controls**, **Storefront**, **Playbooks**, NudgeBee Troubleshoot (`localhost:18080`), Grafana (`localhost:3001`).
-- Sidebar → operator name field: type your real name. Every click is logged under it, which backs up the honesty rules below.
+- Log in at `:3000` as `admin` / `admin` (or sign up with your own name). Every click is logged under the logged-in name, which backs up the honesty rules below. A dashboard restart wipes sign-ups; log in again.
+- Mascot (top of the incident page) shows the state: alert while Investigating, calm when Mitigated, working while Recovering, happy when Resolved. Point at it once.
 - Optional red herring: `make redherring` about a minute before the outage. Never closer, and never scale shop-api yourself.
 
 ## Beat 1 · The outage
@@ -78,7 +79,7 @@ Do these in order. If findings land early, jump to beat 4.
 - Optional: **Run readiness check**. Playbook badge reads Ready.
 
 **3c · The rule (~30 s).** Say it; the same words appear on the Recovery card after Approve.
-- "Advance: operator. Rollback: automatic. Moving customers back needs a human. Moving them away from danger doesn't wait for one."
+- "Start: operator. Steps and rollback: automatic. A human starts the way back. After that the controller moves each step when the numbers pass, and moving customers away from danger never waits for a human."
 
 **3d · Grafana (~1 min).** Grafana tab, the delivery and courier panels (check panel names at rehearsal).
 - "This is the data NuBi reads: dispatches by provider and status. Provider b is the one returning 500s."
@@ -121,15 +122,15 @@ Do these in order. If findings land early, jump to beat 4.
 
 ## Beat 7 · Gradual recovery
 
-**Click:** **Start recovery at 5%**. When Advance is enabled: **Advance to 10%**, then **Advance to 50%**, then **Advance to 100%**.
+**Click:** **Start recovery at 5%**, once. No more clicks: the controller advances 10%, 50% and 100% itself.
 
-**Audience sees:** the big % and the ladder (0% → 5% → 10% → 50% → 100%); Samples "x of 10 needed"; Error rate vs max; pill `guardrail: pass`; observed share. Advance stays disabled until samples and the 20 s window pass.
+**Audience sees:** the big % and the ladder (0% → 5% → 10% → 50% → 100%) climbing; Samples "x of 10 needed"; Error rate vs max; pill `guardrail: pass`; observed share. Mascot switches to working. Each step moves when samples and the 20 s window pass; the Timeline shows "automatic advance: guardrail passed" with actor `controller`.
 
-**Say (first step only):**
-- "5% of Mumbai's customers, chosen by Flagsmith's stable hash. The same people stay in as the number grows."
-- "The button unlocks only when there's enough data and the error rate is under 5%. I still have to click."
+**Say (first step):**
+- "I clicked this one. A person starts the way back. 5% of Mumbai's customers, chosen by Flagsmith's stable hash; the same people stay in as the number grows."
+- "From here nobody clicks. A step moves only when there's enough data and the error rate is under 5%. A breach rolls it back instead."
 
-For later steps, say nothing or one phrase: "Guardrail passed, advancing."
+For later steps, say nothing or one phrase: "Guardrail passed, the controller advanced."
 
 ## Beat 8 · Rollback (Full mode only)
 
@@ -137,22 +138,22 @@ For later steps, say nothing or one phrase: "Guardrail passed, advancing."
 
 **Click:** Demo controls → Provider b → **Start outage**. Back to the incident page, watch.
 
-**Audience sees:** pill `guardrail: breach`, then the split goes to 0% with no click. Status returns to **Mitigated**; Timeline shows the rollback. **Advance** is disabled with the cooldown reason.
+**Audience sees:** pill `guardrail: breach`, then the split goes to 0% with no click (about 2 s at 50% on 25 Nov). Status returns to **Mitigated**; the mascot goes calm; Timeline shows the rollback. The start button is disabled with the cooldown reason.
 
 **Say:**
 - "I broke the provider again on purpose. That click was me."
 - "What follows nobody clicked. The controller saw the error rate breach, set the split to 0%, and reopened the same ticket."
 - "Cooldown: 60 s where it refuses to advance."
 
-**Then:** Demo controls → **Clear outage**. Wait for cooldown and a healthy probe (~1 min), then repeat beat 7 from **Start recovery at 5%**. Say: "Back to the start, as designed."
+**Then:** Demo controls → **Clear outage**. Wait for cooldown and a healthy probe (~1 min), then repeat beat 7: one **Start recovery at 5%** click and the ladder runs again. Say: "Back to the start, as designed."
 
 ## Beat 9 · Resolve
 
-**Click:** after the last step, **Finish recovery (fallback off)**.
+**Click:** none. After 100% passes its guardrail the controller finishes recovery itself.
 
-**Audience sees:** status **Resolved**; "100% of mumbai's customers on delivery · fallback is off"; Storefront: `cust-mum-0142` shows `delivery`, `pickup` again.
+**Audience sees:** status **Resolved**; the mascot turns happy; "100% of mumbai's customers on delivery · fallback is off"; Storefront: `cust-mum-0142` shows `delivery`, `pickup` again.
 
-**Say:** "Fallback off, everyone back on delivery. Every step up was a person's click."
+**Say:** "Fallback off, everyone back on delivery. I clicked once to start; the controller did every step after that, and its name is on each audit row."
 
 ## Beat 10 · Close
 
@@ -177,7 +178,9 @@ After the demo: `RUNBOOK.md` §6 (clear outages, `make load-stop`, scale shop-ap
 | Approve spins | "Waiting for Flagsmith to confirm the change." | Wait up to ~30 s. Don't double-click. |
 | Dashboard says "Controller unreachable" | "The controller is down. The store keeps working because shop-api doesn't depend on it." | `kubectl -n shop get pods`, `colima status`. Don't restart the controller mid-demo: its DB is `emptyDir` and all incidents vanish. |
 | NudgeBee UI won't load | "NudgeBee's view is behind a tunnel that dropped." | Check `tunnels.sh` is running; carry on with Grafana and the playbook. |
-| Advance stays locked past the healthy time | "It's still waiting on the guardrail." (read the reason line under the button) | Wait. Seen once on 24 Nov after a rollback. Don't restart anything. |
+| Start recovery stays locked past the healthy time | "It's still waiting on the guardrail." (read the reason line under the button) | Wait. Seen once on 24 Nov after a rollback. Don't restart anything. |
+| Dashboard sends you to the login page | "The session expired." | Log in again as `admin` / `admin`. |
+| A step sits at the same % for a long time | "It's waiting for enough orders in the window." | Check `make load-start`. Don't click Advance: the controller will move when the guardrail passes. |
 | Alert never fires | "Let me check the load." | `make load-start`; shop-api scaled to 1. |
 
 Other failures: `RUNBOOK.md` §5.
@@ -187,7 +190,7 @@ Other failures: `RUNBOOK.md` §5.
 ## Honesty rules (`ARCHITECTURE.md` §15)
 
 **Never:**
-- call a human click automatic. Approve, every Advance, **Finish recovery**, Close, and both outage clicks are mine. Only these are automatic: the alert, NuBi's investigation and `submit_findings`, the probe, and rollback.
+- call a human click automatic. Approve, **Start recovery at 5%**, Close, and the outage clicks are mine. Only these are automatic: the alert, NuBi's investigation and `submit_findings`, the probe, every recovery step after the first (the playbook's `recovery.auto_advance`; the audit says "automatic advance"), and rollback.
 - present typed text as NuBi output. Findings from the form are labelled `operator`, and I say so out loud.
 - claim zero downtime. Mumbai delivery is off while the fallback is on.
 
@@ -196,4 +199,4 @@ Other failures: `RUNBOOK.md` §5.
 - "The load is synthetic: a generator sends the orders."
 - "Real: the alert, the NuBi investigation on Sarvam, the MCP call, the Flagsmith changes, the automatic rollback."
 - "Proposed, not built: the playbook editor, readiness drills, win-back messages."
-- Rollback speed (8 s) and the rest of the timings are from our 24 Nov rehearsal. Quote them as that, not as a guarantee.
+- Rollback speed (2 s on 25 Nov, 8 s on 24 Nov) and the rest of the timings are from our rehearsals. Quote them as that, not as a guarantee.

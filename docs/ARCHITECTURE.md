@@ -192,6 +192,7 @@ A **generic engine**. It knows nothing about cities, couriers or this store; eve
 
 ### 5.5 `dashboard` (Next.js)
 
+- **Login.** Dashboard pages, `/api/c`, and `/api/shop` require a session. The login, auth, and health endpoints are public. The dashboard seeds `admin`/`admin` and keeps new accounts in memory. `ADMIN_SECRET` signs the session cookie. The controller proxy derives `actor` for audited writes and `owner` for incident acknowledgement from the signed-in user. Wizard discovery and dry-run request bodies pass through without an audit actor.
 - **Every ops panel reads from the controller API.** The browser never talks to Prometheus, Flagsmith or partner-mock. Write actions go through a Next.js server route that adds the admin secret, so the secret never reaches the browser.
 - **Live updates:** panels poll the controller every 2 seconds. No websockets.
 - **Charts:** simple CSS bars. For real metric graphs, link out to Grafana.
@@ -201,7 +202,7 @@ A **generic engine**. It knows nothing about cities, couriers or this store; eve
   - **Incident page** `/incidents/INC-xxxx`:
     - status, a link to the NuBi investigation, and NuBi's summary (verbatim);
     - the validated playbook with **Approve**, and the findings form (safety net);
-    - the recovery panel: split %, observed share, samples, guardrail result, **Advance** (enabled only when the guardrail passes) and **Rollback**;
+    - the recovery panel: split %, observed share, samples, guardrail result, **Start recovery** (enabled when the probe is healthy and no cooldown is left; later steps advance by themselves if the playbook allows, and the button can still advance by hand when the guardrail passes) and **Rollback**; the FestReady mascot shows the state (alert while Investigating, calm when Mitigated, working while Recovering, happy when Resolved);
     - business impact, the provider probe, the timeline, evidence export, and **Close** (requires a note).
   - **Playbooks:** list with Ready/Broken status and a wizard to create from scratch, start from a generic template, or edit a saved playbook.
   - **Storefront:** pick a demo customer from a fixed list of IDs per city, see the options, place an order.
@@ -369,10 +370,10 @@ stateDiagram-v2
     FINDINGS --> FALLBACK: operator approves
     FALLBACK --> PROBE_OK: provider probe healthy for healthy_for
     PROBE_OK --> CANARY_5: operator starts recovery
-    CANARY_5 --> CANARY_10: guardrail pass + operator Advance
-    CANARY_10 --> CANARY_50: guardrail pass + operator Advance
-    CANARY_50 --> CANARY_100: guardrail pass + operator Advance
-    CANARY_100 --> NORMAL: verify + resolve
+    CANARY_5 --> CANARY_10: guardrail pass (automatic if auto_advance, else operator Advance)
+    CANARY_10 --> CANARY_50: guardrail pass (automatic if auto_advance, else operator Advance)
+    CANARY_50 --> CANARY_100: guardrail pass (automatic if auto_advance, else operator Advance)
+    CANARY_100 --> NORMAL: guardrail pass (automatic if auto_advance, else operator) → verify + resolve
     CANARY_5 --> FALLBACK: breach → split 0%
     CANARY_10 --> FALLBACK: breach → split 0%
     CANARY_50 --> FALLBACK: breach → split 0%
@@ -380,7 +381,7 @@ stateDiagram-v2
     PROBE_OK --> FALLBACK: probe fails again
 ```
 
-Steps come from the playbook. The diagram shows manual advancement, which the payment simulation uses. The delivery seed opts into automatic advancement after the operator starts recovery.
+Steps come from the playbook. The payment simulation requires an operator at each step. The delivery seed opts into automatic advancement after the operator starts recovery. The controller checks for a breach before advancing.
 
 ### 9.2 Guardrails (demo values, not production SLOs)
 
@@ -388,7 +389,7 @@ Steps come from the playbook. The diagram shows manual advancement, which the pa
 - **Minimum sample:** `min_samples` per step, set to 10 in the demo. Below that, wait.
 - **Breach:** error rate above `max_error_rate` (5%), OR `max_consecutive_errors` (3) errors in a row.
 - **Observation window:** `window` is 20 s per demo step, with `cooldown_after_rollback` set to 60 s.
-- **Rollback and advance.** The controller rolls back on a breach. Starting recovery always requires the operator. The guardrail must pass at each step. Then the operator advances unless the playbook sets `recovery.auto_advance: true`.
+- **Rollback and advance.** The controller rolls back on a breach. Starting recovery always requires the operator. The guardrail must pass at each step. Then the operator advances unless the playbook sets `recovery.auto_advance: true`. When it does, the guardrail loop records each advance as actor `controller` and applies the same checks through resolution.
 - Flag writes include a read-back. The audit records the actor, before and after state, and result.
 
 ### 9.3 Playbook format
@@ -413,7 +414,6 @@ segments: { fallback: "{value}-fallback", recovery: "{value}-recovery" }
 recovery:
   method: split
   steps: [5, 10, 50, 100]
-  auto_advance: true
   guardrail:
     {
       min_samples: 10,
@@ -422,6 +422,7 @@ recovery:
       window: 20s,
     }
   cooldown_after_rollback: 60s
+  auto_advance: true # operator starts recovery once; later steps advance when the guardrail passes
 events:
   dimension_field: city
   identity_field: customerId
@@ -625,9 +626,10 @@ Who does which check is in [`WORK.md`](WORK.md).
 - **Partially integrated:** e.g. alert ingestion works but NuBi's tool calls don't.
 - **Proposed:** design or pitch work without a working implementation.
 
-**Delivery rehearsal on 24 Nov:**
+**Delivery rehearsals on 24 and 25 Nov:**
 
-- _Implemented and verified:_ provider outage → `DeliveryAvailabilityLow` alert → controller incident and NudgeBee event; NudgeBee automation → NuBi (Sarvam) investigates → `submit_findings` over MCP, no human input (~4 min); operator Approve → Flagsmith fallback for Mumbai only; probe; operator-approved canary 5/10/50/100%; automatic rollback on breach (8 s at 50%) and on alert re-fire; cooldown; resolve and close; impact numbers; evidence JSON/CSV; audit of every action with Flagsmith read-back.
+- _Implemented and verified:_ provider outage → `DeliveryAvailabilityLow` alert → controller incident and NudgeBee event; NudgeBee automation → NuBi (Sarvam) investigates → `submit_findings` over MCP, no human input (~4 min); operator Approve → Flagsmith fallback for Mumbai only; probe; operator-started canary 5/10/50/100%, automatic rollback on a breach or renewed alert, cooldown; resolve and close; impact numbers; evidence JSON/CSV; audit of every action with Flagsmith read-back.
+- On 24 Nov the operator advanced every step, and a breach at 50% rolled back in 8 s. On 25 Nov the ladder advanced automatically after the operator started it and reached Resolved in ~130–170 s. Rollback at 50% took 2–11 s. In the full rehearsal with NuBi, findings arrived at +5:11 and the incident closed at +12:18.
 - _Implemented with simulated input:_ the outage itself (partner-mock switch) and all orders (load generator).
 
 **Feature branch verification on 25 Nov:**
@@ -636,7 +638,7 @@ Who does which check is in [`WORK.md`](WORK.md).
 - _Verified on `demo/payment-failover` against local fixtures:_ separate availability metrics, generic playbook creation, live discovery, synthetic probe, readiness, and save. The wizard flow was exercised in Chrome. Runtime guardrails and readiness use events. PromQL query fields are authorable, and live PromQL health and value-type failover remain unverified.
 - _Proposed:_ readiness drills, Sarvam win-back messages, and multi-tenant operation.
 
-Never present a hand-written diagnosis as NuBi output. Findings entered through the form are labelled `source: operator`. Never call a step "automatic" if a human clicked it.
+Never present a hand-written diagnosis as NuBi output. Findings entered through the form are labelled `source: operator`. Never call a step "automatic" if a human clicked it: Approve and Start recovery are human clicks; the later steps are automatic only with `recovery.auto_advance`.
 
 ---
 

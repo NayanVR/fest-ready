@@ -3,6 +3,8 @@
 > The interfaces Yashasvi (A) and Nayan (B) both code against. Agree on this file together in the first 30 minutes, then code apart.
 > **Rule:** a change to this file needs the other person's OK, said out loud or in chat, before it's merged.
 > All pre-event checks are done and recorded here; only the PromQL health path in `ARCHITECTURE.md` §9.3 is unverified. Names that external setup (Flagsmith, NudgeBee) depends on are listed in `WORK.md` → "Names that must not change"; don't rename them.
+> **v3 (25 Nov):** playbook field `recovery.auto_advance` (§8); the controller itself may advance canary steps (actor `controller`); `recovery` gains `reason` and `autoAdvance`, incident gains `closeNote`; dashboard sessions set `actor` (§3.4). **Yashasvi to confirm.**
+>
 > **v2 (24 Nov):**
 > - Three providers in partner-mock; courier-service merged into shop-api; `GET /api/customers` removed.
 > - New alert `DeliveryAvailabilityLow`.
@@ -103,7 +105,7 @@ Merged into shop-api.
 
 ### 3.4 controller (B)
 
-Read endpoints are open inside the cluster. **Write endpoints (🔒) need header `X-Admin-Secret: $ADMIN_SECRET`.** The dashboard adds it in a Next.js server route; the browser never sees it.
+Read endpoints are open inside the cluster. **Write endpoints (🔒) need header `X-Admin-Secret: $ADMIN_SECRET`.** The dashboard adds it in a Next.js server route; the browser never sees it. The dashboard itself needs a login (seed account `admin`/`admin`, sign-up allowed); its server route overwrites `actor` (and `owner` on ack) in every write body with the logged-in username, so the browser can't choose its audit name. Every page, `/api/c` and `/api/shop` need a session; `/healthz` stays open.
 
 | Method + path | Caller | Purpose |
 |---|---|---|
@@ -116,7 +118,7 @@ Read endpoints are open inside the cluster. **Write endpoints (🔒) need header
 | `POST /api/incidents/:id/ack` | dashboard 🔒 | Take ownership `{"owner":"name"}` |
 | `POST /api/incidents/:id/findings` | dashboard 🔒 | Safety-net findings form. Same body and validation as `submit_findings`, plus `"source":"operator"` |
 | `POST /api/incidents/:id/approve` | dashboard 🔒 | Apply the fallback for the validated findings `{"actor":"name"}`. `409 NO_FINDINGS` if none |
-| `POST /api/incidents/:id/advance` | dashboard 🔒 | From PROBE_OK: start at the first step. From CANARY_n: go to the next step. Operator only. `409 {"error":"GUARDRAIL_NOT_PASSED"}` unless `advanceAllowed`; `409 {"error":"PROBE_NOT_HEALTHY"}` from FALLBACK |
+| `POST /api/incidents/:id/advance` | dashboard 🔒 | From PROBE_OK: start at the first step (operator only). From CANARY_n: go to the next step (operator, or the controller itself when the playbook sets `recovery.auto_advance`; the audit row then has actor `controller` and "automatic advance: guardrail passed"). `409 {"error":"GUARDRAIL_NOT_PASSED"}` unless `advanceAllowed`; `409 {"error":"PROBE_NOT_HEALTHY"}` from FALLBACK |
 | `POST /api/incidents/:id/rollback` | dashboard 🔒 | Split to 0%. Body `{"actor":"name"}` (also accepted on advance and close; defaults to `operator`) |
 | `POST /api/incidents/:id/close` | dashboard 🔒 | `{"note":"..."}`; note required |
 | `GET /api/incidents/:id/evidence` | dashboard | Provider evidence pack. JSON by default, `?format=csv` for CSV |
@@ -144,10 +146,11 @@ Read endpoints are open inside the cluster. **Write endpoints (🔒) need header
  "alert":"DeliveryAvailabilityLow","playbook":"city-delivery-fallback","value":"mumbai",
  "findings":{"source":"nubi","cause":"external","summary":"<verbatim>","nubiUrl":"https://...",
              "evidence":["..."],"submittedAt":"..."},
- "openedAt":"...","mitigatedAt":"...","resolvedAt":null,"closedAt":null,
+ "openedAt":"...","mitigatedAt":"...","resolvedAt":null,"closedAt":null,"closeNote":null,
  "recovery":{"state":"CANARY_10","splitPercent":10,"observedSharePercent":9.6,
              "samples":34,"minSamples":20,"errorRate":0.009,"maxErrorRate":0.05,
-             "consecutiveErrors":0,"guardrail":"pass","advanceAllowed":true},
+             "consecutiveErrors":0,"guardrail":"pass","advanceAllowed":true,
+             "reason":null,"autoAdvance":true},
  "probe":{"healthy":true,"healthySince":"...","healthyFor":"5m","last":[true,true,false]},
  "impact":{"ordersFailed":163,"amountFailed":211000,"ordersSaved":241,"amountSaved":318000,
            "atRiskPerMinute":9000,"customersAffected":143},
@@ -155,6 +158,7 @@ Read endpoints are open inside the cluster. **Write endpoints (🔒) need header
 ```
 - Before findings: `playbook`, `value` and `findings` are `null`, `recovery`, `probe` and `impact` are `null`, and the title is generic.
 - `impact` only counts events for the incident's value.
+- `recovery.reason` is the controller's text for why advance is not allowed (or the breach text), else `null`. `recovery.autoAdvance` is the playbook's `recovery.auto_advance`. `closeNote` is the note given at close.
 
 **Other read shapes** (added 24 Nov; both sides are B):
 ```text
@@ -340,6 +344,7 @@ Stored in the controller's SQLite database. On first start with an empty databas
 | `recovery.guardrail.max_consecutive_errors` | int | ✓ | ≥ 1 |
 | `recovery.guardrail.window` | duration | ✓ | e.g. `60s` |
 | `recovery.cooldown_after_rollback` | duration | ✓ | |
+| `recovery.auto_advance` | bool | | Default `false`. If `true`, once an operator has started recovery, the controller advances each canary step itself when its guardrail passes, through 100% to Resolved. The demo seed sets it |
 | `events.dimension_field` / `identity_field` / `outcome_field` | string | ✓ | Field names in the order event |
 | `events.amount_field` | string | | Enables business impact |
 | `events.canary_filter` | object | | Field → value that an event must match to count for the guardrail |
@@ -352,8 +357,8 @@ Stored in the controller's SQLite database. On first start with an empty databas
 - **Placeholders:** only `{value}`, `{probe_identity}` and `${ENV_VAR}`.
 - **Platform rules no playbook can loosen:**
   - initial fallback needs a human;
-  - advance needs a human;
-  - rollback is automatic;
+  - starting recovery (PROBE_OK → first step) needs a human; later steps advance automatically only if the playbook sets `recovery.auto_advance`, otherwise they need a human too;
+  - rollback is automatic and wins over advance;
   - the numeric limits in the table above.
 - **Readiness check** (`ready` \| `broken` + reasons):
   - flag exists;

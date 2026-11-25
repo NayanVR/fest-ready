@@ -19,7 +19,7 @@ apply_secret() {
 printf 'ADMIN_SECRET=%s\n' "$ADMIN_SECRET" | apply_secret providers
 {
   printf 'ADMIN_SECRET=%s\n' "$ADMIN_SECRET"
-  for key in FLAGSMITH_SERVER_KEY FLAGSMITH_MGMT_TOKEN FLAGSMITH_PROJECT_ID FLAGSMITH_ENV_ID; do
+  for key in FLAGSMITH_SERVER_KEY FLAGSMITH_MGMT_TOKEN FLAGSMITH_PROJECT_ID FLAGSMITH_ENV_ID SARVAM_API_KEY; do
     value=$(printenv "$key" || true)
     if [ -n "$value" ]; then
       printf '%s=%s\n' "$key" "$value"

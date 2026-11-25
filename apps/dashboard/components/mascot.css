@@ -1,128 +1,74 @@
-/* FestReady mascot (chibi). Ink + the one accent (--data) + a soft blush. Motion is transform/opacity only and switched off for reduced-motion. */
-.mc { --mc-paper: var(--mc-bg, var(--surface)); --mc-blush: #f6a3b6; display: block; flex: none; overflow: visible; }
+/* FestReady mascot: one-ink sticker (traced from the original). Motion is transform/opacity only and off for reduced-motion. */
+.mc { --mc-ink: #191919; --mc-paper: var(--mc-bg, var(--surface)); display: block; flex: none; overflow: visible; }
+.mc path { fill: var(--mc-ink); fill-rule: evenodd; }
+.mc .seam { stroke: var(--mc-ink); stroke-width: 1.2; stroke-linejoin: round; } /* closes the hairline where flag and scarf tail are cut off */
+.mc .mc-sparkle { fill: var(--mc-paper); }
+.mc-working .mc-sparkle, .mc-alert .mc-sparkle { fill: var(--data); }
 .mc * { transform-box: fill-box; transform-origin: center; }
-.mc .ink { fill: var(--primary); }
-.mc .ink-stroke { fill: none; stroke: var(--primary); stroke-width: 15; stroke-linecap: round; }
-.mc .paper-line { stroke: var(--mc-paper); stroke-width: 3.5; stroke-linejoin: round; }
-.mc-lid { fill: var(--data); }
-.mc-window { fill: var(--surface); }
-.mc .line { fill: none; stroke: var(--primary); stroke-width: 5.5; stroke-linecap: round; stroke-linejoin: round; }
-.mc .mouth { fill: none; stroke: var(--primary); stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; }
-.mc .glint { fill: var(--surface); }
-.mc-cheeks ellipse { fill: var(--mc-blush); opacity: 0.85; }
-.mc-headset rect { fill: var(--data); }
-.mc-headset .mic { fill: none; stroke: var(--data); stroke-width: 3; stroke-linecap: round; }
-.mc-headset .mic-tip { fill: var(--data); }
-.mc .flag-pole { fill: none; stroke: var(--primary); stroke-width: 3.2; stroke-linecap: round; }
-.mc-cloth { fill: var(--data); stroke: var(--data); stroke-width: 3; stroke-linejoin: round; }
-.mc-sparkle { fill: var(--surface); stroke: var(--surface); stroke-width: 2; stroke-linejoin: round; }
-.mc-sparks path { fill: none; stroke: var(--data); stroke-width: 4; stroke-linecap: round; }
-.mc-bang path { fill: none; stroke: var(--negative); stroke-width: 5.5; stroke-linecap: round; }
-.mc-bang circle { fill: var(--negative); }
-.mc-drop { fill: var(--data); opacity: 0.85; stroke: var(--data); stroke-width: 2; stroke-linejoin: round; }
 
-/* pivots: squash from the feet, tilt from the neck, wave from the pole */
+/* pivots: feet, neck, pole base, scarf knot */
 .mc .mc-all { transform-origin: 50% 100%; animation: mc-bob 3.2s ease-in-out infinite; }
-.mc .mc-head { transform-origin: 50% 92%; animation: mc-tilt 7s ease-in-out infinite; }
-.mc .mc-flag { transform-origin: 50% 100%; animation: mc-sway 2.4s ease-in-out infinite; }
-.mc .mc-cloth { transform-origin: 0% 50%; animation: mc-wave 1.5s ease-in-out infinite; }
-.mc .mc-body { transform-origin: 50% 0%; animation: mc-breath 3.2s ease-in-out infinite; }
-.mc .mc-eyes { animation: mc-blink 4.4s ease-in-out infinite; }
+.mc .mc-head { transform-origin: 45% 90%; }
+.mc .mc-flag { transform-origin: 85% 100%; animation: mc-flutter 1.8s ease-in-out infinite; }
+.mc .mc-tail { transform-origin: 100% 35%; animation: mc-sway 2.6s ease-in-out infinite; }
+.mc .mc-eyes { animation: mc-blink 4.6s ease-in-out infinite; }
 .mc .mc-sparkle { animation: mc-twinkle 2.4s ease-in-out infinite; }
-.mc .mc-sparks path { animation: mc-pulse 2.2s ease-in-out infinite; }
-.mc .mc-sparks path:nth-child(2) { animation-delay: 0.25s; }
-.mc .mc-sparks path:nth-child(3) { animation-delay: 0.5s; }
+.mc .mc-sparks path { transform-origin: 0% 100%; animation: mc-pulse 2.2s ease-in-out infinite; }
+.mc .mc-sparks path:nth-child(2) { animation-delay: 0.3s; }
 
-@keyframes mc-bob {
-  0%, 100% { transform: translateY(0) scale(1.025, 0.975); }
-  45% { transform: translateY(-4px) scale(0.985, 1.03); }
-  70% { transform: translateY(0) scale(1.01, 0.99); }
-}
-@keyframes mc-breath { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05, 0.97); } }
-@keyframes mc-tilt {
-  0%, 62%, 100% { transform: rotate(0); }
-  70% { transform: rotate(-6deg); }
-  80% { transform: rotate(-5deg); }
-  90% { transform: rotate(2deg); }
-}
-@keyframes mc-sway { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(4deg); } }
-@keyframes mc-wave { 0%, 100% { transform: rotate(-8deg) skewY(-5deg); } 50% { transform: rotate(9deg) skewY(6deg); } }
-@keyframes mc-blink { 0%, 90%, 100% { transform: scaleY(1); } 93% { transform: scaleY(0.1); } 96% { transform: scaleY(1); } 97%, 98% { transform: scaleY(1); } }
-@keyframes mc-twinkle { 0%, 100% { transform: scale(0.85) rotate(0); opacity: 1; } 50% { transform: scale(1.3) rotate(25deg); opacity: 0.75; } }
-@keyframes mc-pulse { 0%, 100% { opacity: 0.25; transform: scale(0.8); } 40% { opacity: 1; transform: scale(1.1); } }
-@keyframes mc-type { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(2.5px) scale(1.08, 0.94); } }
-@keyframes mc-tap { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(1.5px) scale(1.015, 0.97); } }
-@keyframes mc-nod { 0%, 100% { transform: translateY(0) rotate(-1.5deg); } 50% { transform: translateY(2px) rotate(2deg); } }
+@keyframes mc-bob { 0%, 100% { transform: translateY(0) scale(1.015, 0.985); } 50% { transform: translateY(-6px) scale(0.99, 1.015); } }
+@keyframes mc-flutter { 0%, 100% { transform: rotate(-3deg) skewY(-2deg); } 50% { transform: rotate(4deg) skewY(3deg); } }
+@keyframes mc-sway { 0%, 100% { transform: rotate(-5deg); } 50% { transform: rotate(6deg); } }
+@keyframes mc-blink { 0%, 91%, 100% { transform: scaleY(1); } 94% { transform: scaleY(0.12); } 97% { transform: scaleY(1); } }
+@keyframes mc-twinkle { 0%, 100% { transform: scale(0.85) rotate(0); } 50% { transform: scale(1.2) rotate(20deg); } }
+@keyframes mc-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 40% { opacity: 0.55; transform: scale(0.75); } }
 
-/* happy: relaxed bob, then a tiny hop every few seconds */
+/* happy: bob, then a little hop every few seconds */
 .mc-happy .mc-all { animation: mc-hop 4.6s ease-in-out infinite; }
-.mc-happy .mc-eyes { animation: none; }
 @keyframes mc-hop {
-  0% { transform: translateY(0) scale(1.02, 0.98); }
-  30% { transform: translateY(-3px) scale(0.99, 1.025); }
-  58% { transform: translateY(0) scale(1.02, 0.98); }
-  66% { transform: translateY(0) scale(1.08, 0.9); }
-  74% { transform: translateY(-14px) scale(0.94, 1.08); }
-  82% { transform: translateY(0) scale(1.08, 0.91); }
-  89% { transform: translateY(-2px) scale(0.99, 1.02); }
-  100% { transform: translateY(0) scale(1.02, 0.98); }
+  0%, 56%, 100% { transform: translateY(0) scale(1.015, 0.985); }
+  28% { transform: translateY(-5px) scale(0.99, 1.015); }
+  64% { transform: translateY(0) scale(1.07, 0.92); }
+  73% { transform: translateY(-26px) scale(0.95, 1.06); }
+  82% { transform: translateY(0) scale(1.06, 0.93); }
+  90% { transform: translateY(-3px) scale(0.99, 1.01); }
 }
 
-/* calm: slow breathing, slow wave */
+/* alert: quick startle, head shiver, "!" pops */
+.mc-alert .mc-all { animation: mc-startle 2.8s ease-out infinite; }
+.mc-alert .mc-head { animation: mc-jitter 2.8s ease-in-out infinite; }
+.mc-alert .mc-flag { animation-duration: 0.7s; }
+.mc-alert .mc-tail { animation-duration: 1s; }
+.mc-alert .mc-sparks path { animation-duration: 0.9s; }
+.mc-alert .mc-eyes { animation: none; }
+.mc-alert .mc-bang { transform-origin: 50% 100%; animation: mc-bang 2.8s ease-out infinite; }
+@keyframes mc-startle {
+  0% { transform: translateY(0) scale(1.06, 0.92); }
+  9% { transform: translateY(-24px) scale(0.94, 1.08); }
+  18% { transform: translateY(0) scale(1.06, 0.93); }
+  27% { transform: translateY(-3px) scale(0.99, 1.01); }
+  36%, 100% { transform: translateY(0) scale(1); }
+}
+@keyframes mc-jitter { 0%, 30%, 58%, 100% { transform: rotate(0); } 40% { transform: rotate(-2deg); } 46% { transform: rotate(2deg); } 52% { transform: rotate(-1.4deg); } }
+@keyframes mc-bang { 0% { transform: scale(0.3); opacity: 0; } 10% { transform: scale(1.3); opacity: 1; } 20%, 85% { transform: scale(1); opacity: 1; } 100% { transform: scale(0.8); opacity: 0; } }
+
+/* working: small typing nod, hands tap */
+.mc-working .mc-all { animation: none; }
+.mc-working .mc-head { animation: mc-nod 1.6s ease-in-out infinite; }
+.mc-working .mc-hands { animation: mc-type 0.4s ease-in-out infinite; }
+.mc-working .mc-sparkle { animation-duration: 1s; }
+.mc-working .mc-sparks path { animation-duration: 0.8s; }
+@keyframes mc-nod { 0%, 100% { transform: translateY(0) rotate(0); } 50% { transform: translateY(3px) rotate(1.5deg); } }
+@keyframes mc-type { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(3px); } }
+
+/* calm: slow breathing, everything slower */
 .mc-calm .mc-all { animation: mc-breathe 5.6s ease-in-out infinite; }
-.mc-calm .mc-body { animation-duration: 5.6s; }
-.mc-calm .mc-cloth { animation-duration: 4s; }
-.mc-calm .mc-flag { animation-duration: 5s; }
+.mc-calm .mc-flag { animation-duration: 4.4s; }
+.mc-calm .mc-tail { animation-duration: 5s; }
 .mc-calm .mc-eyes { animation: none; }
 .mc-calm .mc-sparkle { animation-duration: 5s; }
 .mc-calm .mc-sparks path { animation-duration: 4.4s; }
-@keyframes mc-breathe { 0%, 100% { transform: translateY(0) scale(1.012, 0.988); } 50% { transform: translateY(-2px) scale(0.99, 1.02); } }
-
-/* alert: quick startled jump, then a nervous tremble; "!" pops, sweat drips */
-.mc-alert .mc-all { animation: mc-startle 2.8s ease-out infinite; }
-.mc-alert .mc-head { animation: mc-jitter 2.8s ease-in-out infinite; }
-.mc-alert .mc-cloth { animation-duration: 0.6s; }
-.mc-alert .mc-flag { animation-duration: 0.9s; }
-.mc-alert .mc-sparks path { animation-duration: 0.9s; stroke: var(--negative); }
-.mc-alert .mc-sparkle { animation-duration: 1s; }
-.mc-alert .mc-bang { transform-origin: 50% 100%; animation: mc-bang 2.8s ease-out infinite; }
-.mc-alert .mc-drop { transform-origin: 50% 0%; animation: mc-drip 2.8s ease-in infinite; }
-@keyframes mc-startle {
-  0% { transform: translateY(0) scale(1.06, 0.92); }
-  9% { transform: translateY(-15px) scale(0.93, 1.1); }
-  18% { transform: translateY(0) scale(1.08, 0.9); }
-  27% { transform: translateY(-2px) scale(0.99, 1.02); }
-  36%, 100% { transform: translateY(0) scale(1.01, 0.99); }
-}
-@keyframes mc-jitter {
-  0%, 30% { transform: rotate(0); }
-  40% { transform: rotate(-1.6deg); }
-  46% { transform: rotate(1.6deg); }
-  52% { transform: rotate(-1.2deg); }
-  58%, 100% { transform: rotate(0); }
-}
-@keyframes mc-bang {
-  0% { transform: scale(0.3); opacity: 0; }
-  10% { transform: scale(1.35); opacity: 1; }
-  20%, 85% { transform: scale(1); opacity: 1; }
-  100% { transform: scale(0.8); opacity: 0; }
-}
-@keyframes mc-drip {
-  0%, 12% { transform: translateY(-4px) scale(0.6); opacity: 0; }
-  25% { transform: translateY(0) scale(1); opacity: 0.9; }
-  75% { transform: translateY(12px) scale(1); opacity: 0.8; }
-  90%, 100% { transform: translateY(18px) scale(0.9); opacity: 0; }
-}
-
-/* working: head nods, hands and laptop tap */
-.mc-working .mc-all { animation: none; }
-.mc-working .mc-head { animation: mc-nod 3.2s ease-in-out infinite; }
-.mc-working .mc-body { animation: mc-breath 3.2s ease-in-out infinite; }
-.mc-working .mc-arm { animation: mc-type 0.36s ease-in-out infinite; }
-.mc-working .mc-laptop { animation: mc-tap 0.72s ease-in-out infinite; }
-.mc-working .mc-cloth { animation-duration: 2.4s; }
-.mc-working .mc-sparkle { animation-duration: 0.9s; }
-.mc-working .mc-sparks path { animation-duration: 0.8s; }
+@keyframes mc-breathe { 0%, 100% { transform: scale(1.01, 0.99); } 50% { transform: translateY(-2px) scale(0.99, 1.02); } }
 
 /* Overview header: mascot beside the title and the one-line status */
 .mc-head-row { display: flex; align-items: center; gap: 16px; --mc-bg: var(--ground); }
