@@ -276,6 +276,7 @@ export default function PlaybookWizard({ playbook, existing = [], defaultOwner, 
   const [newValue, setNewValue] = useState("");
   const [probeValue, setProbeValue] = useState("");
   const [wide, setWide] = useState(true);
+  const [typed, setTyped] = useState<Set<string>>(() => new Set());
   const heading = useRef<HTMLHeadingElement>(null);
   const discovered = useRef(false);
   const review = stage === stages.length - 1;
@@ -378,15 +379,29 @@ export default function PlaybookWizard({ playbook, existing = [], defaultOwner, 
     setFields((draft) => ({ ...draft, [name]: value }));
   }
 
+  // Fields with discovered options are real dropdowns; "Type another…" switches to a text box for anything not listed.
   function field(name: Key, label: string, opts: { help?: ReactNode; options?: string[]; props?: ComponentProps<"input">; area?: boolean } = {}) {
     const id = `wz-${name}`;
-    const listId = opts.options?.length ? `${id}-list` : undefined;
+    const options = opts.options?.length && !opts.area ? opts.options : undefined;
+    const custom = Boolean(options) && (typed.has(name) || (fields[name] !== "" && !options!.includes(fields[name])));
     const common = { id, value: fields[name], "aria-describedby": opts.help ? `${id}-help` : undefined,
       onChange: (event: { target: { value: string } }) => changeField(name, event.target.value) };
+    const setTyped_ = (on: boolean) => setTyped((t) => { const n = new Set(t); if (on) n.add(name); else n.delete(name); return n; });
     return <div className="wz-field">
       <label htmlFor={id}>{label}</label>
-      {opts.area ? <textarea rows={3} {...common} /> : <input autoComplete="off" list={listId} {...common} {...opts.props} />}
-      {listId && <datalist id={listId}>{opts.options!.map((value) => <option key={value} value={value} />)}</datalist>}
+      {options ? <>
+        <select id={custom ? `${id}-pick` : id} aria-label={custom ? `${label}: choose from the list` : undefined}
+          value={custom ? "__other" : fields[name]} disabled={opts.props?.readOnly}
+          onChange={(event) => {
+            const v = event.target.value;
+            if (v === "__other") { setTyped_(true); changeField(name, ""); } else { setTyped_(false); changeField(name, v); }
+          }}>
+          <option value="" disabled>Choose…</option>
+          {options.map((value) => <option key={value} value={value}>{value}</option>)}
+          <option value="__other">Type another…</option>
+        </select>
+        {custom && <input autoComplete="off" placeholder="Type a value" {...common} {...opts.props} />}
+      </> : opts.area ? <textarea rows={3} {...common} /> : <input autoComplete="off" {...common} {...opts.props} />}
       {(opts.help || auto[name]) && <p className="wz-help" id={`${id}-help`}>{opts.help} <Hint from={auto[name]} /></p>}
     </div>;
   }
