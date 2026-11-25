@@ -24,7 +24,9 @@ const fixture = Bun.serve({
       return new Response(null, { status: seed.probe.expect.healthy.status });
     }
     if (pathname === "/fixture/redirect-target") return new Response(null, { status: seed.probe.expect.healthy.status });
-    if (pathname === `/api/v1/label/${seed.dimension.label}/values` && searchParams.get("limit") === "100")
+    if (pathname === `/api/v1/label/${seed.dimension.label}/values` && searchParams.get("limit") === "100" &&
+        searchParams.has("start") && searchParams.has("end") &&
+        Number(searchParams.get("end")) - Number(searchParams.get("start")) === 600)
       return Response.json({ status: "success", data: [...seed.dimension.values].reverse().concat(seed.dimension.values) });
     if (pathname === "/api/v1/label/fixture_upstream_error/values")
       return new Response("private fixture response", { status: 500 });

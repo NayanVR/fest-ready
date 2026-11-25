@@ -31,6 +31,9 @@ export async function wizardLabelValues(input: any): Promise<Result> {
   const limit = 100;
   try {
     const url = new URL(`/api/v1/label/${label}/values`, base);
+    const now = Math.floor(Date.now() / 1000);
+    url.searchParams.set("start", String(now - 10 * 60));
+    url.searchParams.set("end", String(now));
     url.searchParams.set("limit", String(limit));
     const res = await fetch(url, { signal: AbortSignal.timeout(5000), redirect: "error" });
     if (!res.ok) {
