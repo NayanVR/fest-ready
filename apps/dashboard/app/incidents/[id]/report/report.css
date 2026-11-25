@@ -1,0 +1,87 @@
+/* Incident report: an A4 sheet on screen, the same sheet in print. Ink on white, one data hue on the figures,
+   original text in a grey block, Sarvam translations in a tinted block with a visible label. */
+.report { --sheet: 210mm; max-width: var(--sheet); margin: 0 auto; }
+.report .sheet {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card);
+  padding: 14mm; font: 400 10.5pt/1.5 var(--rfont), var(--font); color: var(--text);
+}
+.r-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.r-bar .sp { flex: 1; }
+.r-bar a { color: var(--muted); }
+.r-lang { flex-direction: row; align-items: center; gap: 8px; }
+.r-warn { background: var(--warn-bg); color: var(--warn-ink); border-radius: var(--radius-control); padding: 8px 12px; margin-bottom: 12px; }
+
+.r-head { display: flex; align-items: center; gap: 16px; padding-bottom: 6mm; }
+.r-head h1 { font: 500 20pt/1.15 var(--rfont), var(--font); letter-spacing: -0.01em; }
+.r-brand { color: var(--muted); margin-bottom: 4px; }
+.r-id { font-weight: 700; }
+
+.r-facts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4mm; margin: 0 0 8mm; padding: 4mm 5mm; background: var(--ground); border-radius: var(--radius-control); }
+.r-facts dt, .r-figs dt { color: var(--muted); font-size: 9pt; }
+.r-facts dd { margin: 2px 0 0; font-weight: 500; }
+
+.report section { margin-top: 7mm; break-inside: avoid; }
+.report section.r-timeline { break-inside: auto; }
+.report h2 { font: 700 13pt/1.3 var(--rfont), var(--font); margin-bottom: 3mm; break-after: avoid; }
+.r-story { max-width: 70ch; }
+.r-meta { color: var(--muted); margin-bottom: 3mm; }
+.r-meta b { color: var(--text); font-weight: 500; }
+
+.r-kv { display: grid; grid-template-columns: max-content 1fr; gap: 1.5mm 8mm; margin: 4mm 0 0; }
+.r-kv dt { color: var(--muted); }
+.r-kv dd { margin: 0; font-weight: 500; }
+
+.r-orig, .r-tr { border-radius: var(--radius-control); padding: 4mm 5mm; break-inside: avoid; }
+.r-orig { background: var(--ground); }
+.r-tr { background: #eaf1fb; margin-top: 3mm; box-shadow: inset 3px 0 0 var(--data); }
+.r-label { font-size: 9pt; font-weight: 500; color: var(--muted); margin-bottom: 2mm; }
+.r-tr .r-label { color: var(--data); }
+.r-pre { white-space: pre-wrap; }
+.r-orig ul, .r-tr ul { margin: 3mm 0 0; padding-left: 5mm; }
+.r-orig li + li, .r-tr li + li { margin-top: 1.5mm; }
+
+.r-figs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4mm; margin: 0; }
+.r-figs dd { margin: 1mm 0 0; font-size: 18pt; line-height: 1.2; color: var(--data); letter-spacing: -0.01em; }
+.r-figs small { display: block; font-size: 10pt; color: var(--text); letter-spacing: 0; }
+
+.report table { font-size: 9pt; line-height: 1.4; }
+.report th { font-size: 9pt; padding: 0 3mm 2mm 0; }
+.report td { padding: 1.6mm 3mm 1.6mm 0; overflow-wrap: anywhere; }
+.report td:nth-child(-n+2) { white-space: nowrap; }
+.report tr { break-inside: avoid; }
+.report tbody tr:hover td { background: none; }
+
+.r-foot { margin-top: 8mm; padding-top: 3mm; border-top: 1px solid var(--rule); color: var(--muted); font-size: 9pt; }
+
+@media (max-width: 800px) {
+  .report .sheet { padding: 20px 16px; }
+  .r-facts, .r-figs { grid-template-columns: 1fr 1fr; }
+}
+
+@page { size: A4; margin: 14mm; }
+@media print {
+  html, body { background: #fff; }
+  .side, .menu, .r-bar, button { display: none !important; }
+  .shell { display: block; }
+  .canvas { padding: 0; }
+  .report { max-width: none; }
+  .report .sheet { border: 0; border-radius: 0; padding: 0; font-size: 8.5pt; line-height: 1.42; }
+  /* denser than on screen so a translated report (original + translation) stays near two A4 pages */
+  .r-head { padding-bottom: 4mm; }
+  .r-head h1 { font-size: 16pt; }
+  .report h2 { font-size: 11.5pt; margin-bottom: 2mm; }
+  .report section { margin-top: 5mm; }
+  .r-facts { margin-bottom: 5mm; padding: 3mm 4mm; }
+  .r-facts dt, .r-figs dt, .r-label, .r-foot { font-size: 7.5pt; }
+  .r-story { max-width: none; }
+  .r-kv { grid-template-columns: max-content 1fr max-content 1fr; margin-top: 3mm; }
+  .r-orig, .r-tr { padding: 3mm 4mm; }
+  .r-orig ul, .r-tr ul { margin-top: 2mm; }
+  .r-orig li + li, .r-tr li + li { margin-top: 0.8mm; }
+  .r-figs dd { font-size: 14pt; }
+  .report table { font-size: 8pt; }
+  .report td { padding: 0.7mm 3mm 0.7mm 0; line-height: 1.3; }
+  .r-foot { margin-top: 5mm; }
+  .report, .report * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .mc * { animation: none !important; }
+}

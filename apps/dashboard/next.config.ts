@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 // In the cluster they come from the Deployment env, and the file doesn't exist.
 try {
   for (const line of readFileSync("../../.env", "utf8").split("\n")) {
-    const m = line.match(/^(ADMIN_SECRET|CONTROLLER_URL|SHOP_URL|DEMO_PROVIDERS)=(.*)$/);
+    const m = line.match(/^(ADMIN_SECRET|CONTROLLER_URL|SHOP_URL|DEMO_PROVIDERS|SARVAM_API_KEY)=(.*)$/);
     if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim().replace(/^["']|["']$/g, "");
   }
 } catch {}
