@@ -1,0 +1,53 @@
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: shop-api
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  namespaceSelector:
+    matchNames: [shop]
+  selector:
+    matchLabels:
+      app: shop-api
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 10s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: partner-mock
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  namespaceSelector:
+    matchNames: [providers]
+  selector:
+    matchLabels:
+      app: partner-mock
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 10s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: delivery-availability
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: delivery
+      rules:
+        - alert: DeliveryAvailabilityLow
+          expr: |
+            sum(rate(shop_orders_total{mode="delivery",result="error"}[1m]))
+              / sum(rate(shop_orders_total{mode="delivery",result=~"success|error"}[1m])) > 0.05
+          for: 1m

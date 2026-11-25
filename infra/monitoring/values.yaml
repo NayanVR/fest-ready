@@ -1,0 +1,51 @@
+defaultRules:
+  create: false
+kubeStateMetrics:
+  enabled: false
+nodeExporter:
+  enabled: false
+grafana:
+  service:
+    type: NodePort
+    nodePort: 30301
+prometheus:
+  prometheusSpec:
+    retention: 6h
+    retentionSize: 512MB
+    evaluationInterval: 10s
+    scrapeInterval: 30s
+    serviceMonitorSelector:
+      matchLabels:
+        release: kube-prometheus-stack
+    ruleSelector:
+      matchLabels:
+        release: kube-prometheus-stack
+alertmanager:
+  enableFeatures:
+    - receiver-name-in-metrics
+  alertmanagerSpec:
+    secrets:
+      - nudgebee-webhook
+  config:
+    route:
+      receiver: 'null'
+      group_by: [alertname]
+      group_wait: 5s
+      group_interval: 10s
+      repeat_interval: 4h
+      routes:
+        - receiver: nudgebee
+          matchers: ['alertname="DeliveryAvailabilityLow"']
+          continue: true
+        - receiver: controller
+          matchers: ['alertname="DeliveryAvailabilityLow"']
+    receivers:
+      - name: 'null'
+      - name: nudgebee
+        webhook_configs:
+          - url_file: /etc/alertmanager/secrets/nudgebee-webhook/url
+            send_resolved: true
+      - name: controller
+        webhook_configs:
+          - url: http://controller.shop/webhooks/alertmanager
+            send_resolved: true
