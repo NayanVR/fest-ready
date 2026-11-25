@@ -6,7 +6,8 @@
     "dev": "bun --watch --env-file=../../.env src/index.ts",
     "start": "bun src/index.ts",
     "test": "bun test",
-    "check:flagsmith": "bun --env-file=../../.env scripts/check-flagsmith.ts"
+    "check:flagsmith": "bun --env-file=../../.env scripts/check-flagsmith.ts",
+    "preflight": "bun --env-file=../../.env scripts/preflight.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
