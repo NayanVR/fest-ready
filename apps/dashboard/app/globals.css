@@ -137,7 +137,7 @@ textarea { height: auto; min-height: 72px; padding: 8px 10px; resize: vertical; 
 .wz-progress li.done button.link { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
 .wz-progress li.now button.link { color: var(--text); font-weight: 600; }
 .wz-progress button.link:disabled { background: none; cursor: default; }
-.wz-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 400px); gap: 32px; align-items: start; }
+.wz-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, 440px); gap: 32px; align-items: start; }
 .wz-form { display: grid; gap: 20px; min-width: 0; }
 .wz-stagehead h3 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
 .wz-stagehead h3:focus { outline: none; }

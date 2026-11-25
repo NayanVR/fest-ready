@@ -4,7 +4,7 @@ import { NextRequest } from "next/server";
 import { controllerUrl } from "@/lib/server";
 import { parseAnswer, systemPrompt, type Context, type Msg } from "@/lib/assistant";
 
-const TIMEOUT = 60_000;
+const TIMEOUT = 90_000;
 const fail = (status: number, error: string, message: string) => Response.json({ error, message }, { status });
 
 async function controller(path: string, body?: unknown): Promise<any> {
@@ -43,18 +43,25 @@ async function context(): Promise<Context> {
   return { playbooks, flags, eventFields, labelValues, unavailable };
 }
 
-async function sarvam(messages: { role: string; content: string }[], deadline: number): Promise<string> {
+async function sarvam(messages: { role: string; content: string }[], deadline: number, retried = false): Promise<string> {
   const r = await fetch("https://api.sarvam.ai/v1/chat/completions", {
     method: "POST",
     headers: { "content-type": "application/json", "api-subscription-key": process.env.SARVAM_API_KEY! },
-    body: JSON.stringify({ model: "sarvam-105b", max_tokens: 8000, messages }),
+    // sarvam-105b reasons before answering (reasoning_content); a large prompt can use the whole budget on thinking.
+    body: JSON.stringify({ model: "sarvam-105b", max_tokens: 16384, messages }),
     cache: "no-store",
     signal: AbortSignal.timeout(Math.max(1000, deadline - Date.now())),
   });
   const j = await r.json().catch(() => null);
-  const content = j?.choices?.[0]?.message?.content;
-  if (!r.ok || typeof content !== "string") throw new Error(`Sarvam returned ${r.status}`);
-  return content;
+  const choice = j?.choices?.[0];
+  const content = choice?.message?.content;
+  if (r.ok && typeof content === "string" && content.trim()) return content;
+  console.log(JSON.stringify({ ts: new Date().toISOString(), service: "dashboard", level: "warn", msg: "sarvam empty answer",
+    status: r.status, finish: choice?.finish_reason ?? null, usage: j?.usage?.completion_tokens ?? null, error: j?.error?.message ?? null }));
+  // HTTP 200 with no answer text = the model ran out of budget while reasoning: retry once, asking it to answer directly.
+  if (r.ok && !retried && Date.now() < deadline - 5000)
+    return sarvam([...messages, { role: "user", content: "Keep your reasoning short and answer now with the JSON only." }], deadline, true);
+  throw new Error(r.ok ? `Sarvam gave no answer (${choice?.finish_reason ?? "empty"}); try a shorter request` : `Sarvam returned ${r.status}${j?.error?.message ? `: ${j.error.message}` : ""}`);
 }
 
 export async function POST(req: NextRequest) {

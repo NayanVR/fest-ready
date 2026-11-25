@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
 const LINKS = [["/", "Overview"], ["/playbooks", "Playbooks"], ["/audit", "Audit log"]] as const;
+const TOOLS = [["/demo", "Demo controls"]] as const;
 
 export default function Nav({ user, paymentDemo }: { user?: string; paymentDemo: boolean }) {
   const path = usePathname();
@@ -25,8 +26,12 @@ export default function Nav({ user, paymentDemo }: { user?: string; paymentDemo:
       <button className="menu" aria-expanded={open} aria-controls="side-body" onClick={() => setOpen(!open)}>Menu</button>
       <div className={`body ${open ? "open" : ""}`} id="side-body">
         <nav aria-label="Main">{LINKS.map(item)}</nav>
+        <div className="group">Demo</div>
+        <nav aria-label="Demo">
+          {TOOLS.map(item)}
+          <a href="/store" target="_blank" rel="noreferrer">Storefront ↗</a>
+        </nav>
         <div className="foot">
-          <a href="/store" target="_blank" rel="noreferrer" style={{ color: "var(--muted)", fontSize: 13, padding: "0 6px", textDecoration: "none" }}>Open demo store ↗</a>
           <div className="rule">{paymentDemo
             ? "Fallback and recovery start require an operator. Recovery steps follow the playbook. Rollback is automatic."
             : "fallback & recovery start: operator · steps & rollback: automatic"}</div>

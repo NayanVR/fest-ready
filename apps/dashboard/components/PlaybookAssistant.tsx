@@ -35,8 +35,9 @@ function DraftCard({ draft, readiness, onApply }: { draft: any; readiness?: Read
   );
 }
 
-export default function PlaybookAssistant({ open, onClose, draft, onApply }: {
-  open: boolean; onClose: () => void; draft?: object; onApply: (draft: object) => void;
+// `inline`: a panel that lives in the page (the wizard's side column) instead of a drawer; always open.
+export default function PlaybookAssistant({ open = true, onClose = () => {}, draft, onApply, inline = false }: {
+  open?: boolean; onClose?: () => void; draft?: object; onApply: (draft: object) => void; inline?: boolean;
 }) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [text, setText] = useState("");
@@ -45,14 +46,14 @@ export default function PlaybookAssistant({ open, onClose, draft, onApply }: {
   const list = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
 
-  useEffect(() => { if (open) input.current?.focus(); }, [open]);
+  useEffect(() => { if (open && !inline) input.current?.focus(); }, [open, inline]);
   useEffect(() => { list.current?.scrollTo({ top: list.current.scrollHeight, behavior: "smooth" }); }, [turns, busy]);
   useEffect(() => {
-    if (!open) return;
+    if (!open || inline) return;
     const esc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", esc);
     return () => window.removeEventListener("keydown", esc);
-  }, [open, onClose]);
+  }, [open, onClose, inline]);
 
   // The newest assistant draft wins over the wizard's draft, so follow-ups edit what the chat produced.
   const latest = [...turns].reverse().find((t) => t.draft)?.draft ?? draft;
@@ -76,15 +77,14 @@ export default function PlaybookAssistant({ open, onClose, draft, onApply }: {
   }
 
   if (!open) return null;
-  return (
-    <div className="pa-scrim" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <aside className="pa" role="dialog" aria-modal="true" aria-labelledby="pa-title">
+  const panel = (
+      <aside className={`pa${inline ? " pa-inline" : ""}`} role={inline ? "complementary" : "dialog"} aria-modal={inline ? undefined : true} aria-labelledby="pa-title">
         <header className="pa-head">
           <div>
-            <h2 id="pa-title">Playbook assistant</h2>
+            <h2 id="pa-title">{inline ? "Ask AI" : "Playbook assistant"}</h2>
             <p className="muted">AI draft by Sarvam — review before saving</p>
           </div>
-          <button onClick={onClose} aria-label="Close assistant">Close</button>
+          {!inline && <button onClick={onClose} aria-label="Close assistant">Close</button>}
         </header>
 
         <div className="pa-list" ref={list} aria-live="polite">
@@ -117,6 +117,8 @@ export default function PlaybookAssistant({ open, onClose, draft, onApply }: {
           <button className="primary" type="submit" disabled={busy || !text.trim()}>Send</button>
         </form>
       </aside>
-    </div>
+  );
+  return inline ? panel : (
+    <div className="pa-scrim" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>{panel}</div>
   );
 }

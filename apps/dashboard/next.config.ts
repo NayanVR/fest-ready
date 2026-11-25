@@ -14,8 +14,7 @@ export default {
   async redirects() {
     return [
       { source: "/storefront", destination: "/store", permanent: false },
-      { source: "/demo", destination: "/store/presenter", permanent: false },
-      { source: "/payments", destination: "/store/presenter", permanent: false },
+      { source: "/payments", destination: "/demo", permanent: false },
     ];
   },
 }; // stop `next dev` re-creating apps/dashboard/AGENTS.md (repo root has the only one)

@@ -255,7 +255,6 @@ export default function PlaybookWizard({ playbook, existing = [], defaultOwner, 
   const [newValue, setNewValue] = useState("");
   const [probeValue, setProbeValue] = useState("");
   const [wide, setWide] = useState(true);
-  const [askAI, setAskAI] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null);
   const discovered = useRef(false);
   const review = stage === stages.length - 1;
@@ -413,7 +412,6 @@ export default function PlaybookWizard({ playbook, existing = [], defaultOwner, 
     setTried(false);
     setStage(stages.length - 1);
     void readiness.run(draft);
-    setAskAI(false);
   }
 
   function go(next: number) {
@@ -469,10 +467,7 @@ export default function PlaybookWizard({ playbook, existing = [], defaultOwner, 
             unavailable.length ? `Could not read ${unavailable.join(", ")}` : data ? "Suggestions from live Flagsmith, Prometheus and order events" : ""}
         </span>
         {catalog.error && <button type="button" onClick={() => void catalog.run({})}>Retry</button>}
-        <button type="button" className="primary" onClick={() => setAskAI(true)}>Ask AI</button>
       </div>
-      <PlaybookAssistant open={askAI} onClose={() => setAskAI(false)} onApply={applyAI}
-        draft={(() => { try { return draftPlaybook(fields, identities); } catch { return undefined; } })()} />
       <ol className="wz-progress" aria-label="Steps">
         {stages.map(({ title }, i) => {
           const reachable = i < stage || (i > stage && (blockedAt < 0 || i <= blockedAt));
@@ -678,13 +673,10 @@ export default function PlaybookWizard({ playbook, existing = [], defaultOwner, 
             </button>
           </div>
         </form>
-        <aside className="wz-preview">
-          <details open={wide} key={String(wide)}>
-            <summary>Playbook preview</summary>
-            <p className="wz-help">This is what the controller stores. YAML seeds use the same shape.</p>
-            {previewError ? <p className="wz-warn">{previewError}</p> : <pre>{preview}</pre>}
-          </details>
-        </aside>
+        <div className="wz-preview">
+          <PlaybookAssistant inline onApply={applyAI}
+            draft={(() => { try { return draftPlaybook(fields, identities); } catch { return undefined; } })()} />
+        </div>
       </div>
     </section>
   );
