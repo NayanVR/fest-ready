@@ -26,7 +26,8 @@ async function proxy(req: NextRequest, { params }: { params: Promise<{ path: str
       headers,
       body: post ? await req.text() : undefined,
       cache: "no-store",
-      signal: AbortSignal.timeout(5000),
+      // Payment routing can query the fixture and try two alternate providers in sequence.
+      signal: AbortSignal.timeout(payment ? 8000 : 5000),
       redirect: payment ? "error" : "follow",
     });
     return new Response(r.body, { status: r.status, headers: { "content-type": "application/json" } });

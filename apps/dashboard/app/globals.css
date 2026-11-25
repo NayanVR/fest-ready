@@ -143,9 +143,13 @@ textarea { height: auto; min-height: 72px; padding: 8px 10px; resize: vertical; 
 .payment-customer label { flex: 1 1 160px; min-width: 0; }
 .payment-cards dd { overflow-wrap: anywhere; }
 .payment-incident-link { margin-top: 12px; }
+@media (max-width: 520px), (min-width: 801px) and (max-width: 970px) {
+  .payment-providers .row { display: grid; justify-items: start; gap: 4px; }
+}
 @media (max-width: 520px) {
   .payment-providers { grid-template-columns: 1fr; }
   .payment-providers li { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+  .payment-providers button { justify-self: end; padding-inline: 10px; }
   .payment-customer label { flex-basis: 100%; }
 }
 @media (max-width: 520px) {
