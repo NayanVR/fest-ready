@@ -151,3 +151,35 @@ test("close needs Resolved or Investigating; impact counts this value", async ()
   await act(db, "INC-0001", "op", { type: "approve" });
   expect((await act(db, "INC-0001", "op", { type: "close" }, "done")).status).toBe(409);
 });
+
+test("auto_advance: after the operator starts recovery, passing steps advance by themselves up to Resolved", async () => {
+  if (!pb.recovery.auto_advance) return; // seed playbook opts in; nothing to test otherwise
+  const db = freshDb();
+  await fire(db);
+  const id = "INC-0001";
+  findingsForIncident(db, id, findings());
+  await act(db, id, "op", { type: "approve" });
+  recordProbe(db, 1, true, 201, null, Date.now());
+  await probeTick(db, async () => ({ ok: true, status: 201, error: null }), () => Date.now() + parseDuration(pb.probe.healthy_for));
+  // Recovery never starts by itself from PROBE_OK.
+  await guardrailTick(db, Date.now() + 10 * parseDuration(g.window));
+  expect(getIncident(db, id)!.recovery!.state).toBe("PROBE_OK");
+  await act(db, id, "op", { type: "advance", guardrailPass: false, cooldownLeftMs: 0 });
+
+  let now = Date.now(), i = 0;
+  for (const step of steps) {
+    expect(getIncident(db, id, now)!.recovery!.state).toBe(`CANARY_${step}`);
+    await guardrailTick(db, now); // too few samples, window not elapsed: no change
+    expect(getIncident(db, id, now)!.recovery!.state).toBe(`CANARY_${step}`);
+    for (let k = 0; k < g.min_samples; k++) storeEvent(db, order("success", i++), now + 1);
+    now += parseDuration(g.window) + 1000;
+    await guardrailTick(db, now);
+  }
+  const inc = getIncident(db, id, now)!;
+  expect(inc.status).toBe("Resolved");
+  expect(flag.fallbackActive).toBe(false);
+  expect(flag.splitPercent).toBe(0);
+  const rows = auditRows(db, id).filter((r: any) => r.action.includes("automatic advance"));
+  expect(rows).toHaveLength(steps.length);
+  expect(rows.every((r: any) => r.actor === "controller")).toBe(true);
+});

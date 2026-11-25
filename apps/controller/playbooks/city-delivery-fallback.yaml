@@ -16,6 +16,7 @@ recovery:
   steps: [5, 10, 50, 100]
   guardrail: { min_samples: 10, max_error_rate: 0.05, max_consecutive_errors: 3, window: 20s }
   cooldown_after_rollback: 60s
+  auto_advance: true   # operator starts recovery once; later steps advance when the guardrail passes
 events:
   dimension_field: city
   identity_field: customerId

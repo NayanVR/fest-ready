@@ -131,7 +131,7 @@ export default function Incident({ id, initial }: { id: string; initial: Loaded<
                 <Pill>{rec.state}</Pill>
                 {!(rec.state === "NORMAL" || rec.state === "CLOSED") && <Pill kind={rec.guardrail === "pass" ? "ok" : rec.guardrail === "breach" ? "bad" : "warn"}>guardrail: {rec.guardrail}</Pill>}
                 <span className="sp" />
-                <span className="muted">advance: operator · rollback: automatic</span>
+                <span className="muted">{rec.autoAdvance ? "start: operator · steps: automatic · rollback: automatic" : "advance: operator · rollback: automatic"}</span>
               </div>
               <div className="bignum">{shown}%<small>{(rec.state === "NORMAL" || rec.state === "CLOSED") ? `of ${inc.value ?? "the value"}'s customers on delivery · fallback is off` : `of ${inc.value ?? "the value"}'s customers back on delivery · observed ${rec.observedSharePercent == null ? "–" : `${rec.observedSharePercent}%`}`}</small></div>
               {steps.length > 0 && (
@@ -166,7 +166,7 @@ export default function Incident({ id, initial }: { id: string; initial: Loaded<
                 </Btn>
                 <Btn className="danger" busy={busy} label="Rollback" disabled={rec.splitPercent === 0 || done}
                   onClick={() => act("Rollback", "rollback", { actor: operator() })}>Rollback to 0%</Btn>
-                {!rec.advanceAllowed && !done && <span className="muted">{whyNot(rec, inc.probe)}</span>}
+                {!rec.advanceAllowed && !done && <span className="muted">{whyNot(rec, inc.probe)}{rec.autoAdvance && rec.state.startsWith("CANARY_") ? " Advances by itself when the guardrail passes." : ""}</span>}
               </div>
             </section>
           )}

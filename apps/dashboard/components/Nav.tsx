@@ -30,7 +30,7 @@ export default function Nav() {
         <div className="group">Demo</div>
         <nav aria-label="Demo">{TOOLS.map(item)}</nav>
         <div className="foot">
-          <div className="rule">advance: operator · rollback: automatic</div>
+          <div className="rule">fallback &amp; recovery start: operator · steps &amp; rollback: automatic</div>
           <label>Your name
             <input
               aria-label="Your name, recorded in the audit log" placeholder="e.g. Nayan" value={name}

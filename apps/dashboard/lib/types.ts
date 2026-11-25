@@ -6,7 +6,7 @@ export type Findings = {
 export type Recovery = {
   state: string; splitPercent: number; observedSharePercent: number | null;
   samples: number; minSamples: number; errorRate: number | null; maxErrorRate: number;
-  consecutiveErrors: number; guardrail: string; advanceAllowed: boolean; reason?: string | null;
+  consecutiveErrors: number; guardrail: string; advanceAllowed: boolean; reason?: string | null; autoAdvance?: boolean;
 };
 export type Incident = {
   id: string; title: string; status: string; owner: string | null; alert: string;

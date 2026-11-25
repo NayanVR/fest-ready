@@ -20,6 +20,7 @@ export type Playbook = {
     steps: number[];
     guardrail: { min_samples: number; max_error_rate: number; max_consecutive_errors: number; window: string };
     cooldown_after_rollback: string;
+    auto_advance?: boolean; // after an operator starts recovery, advance each step when its guardrail passes
   };
   events: {
     dimension_field: string;
@@ -96,6 +97,7 @@ export function validatePlaybook(p: any): string[] {
   need("recovery.guardrail.max_consecutive_errors", (x) => int(x) && x >= 1, "an integer ≥ 1");
   need("recovery.guardrail.window", dur, "a duration like 60s");
   need("recovery.cooldown_after_rollback", dur, "a duration like 120s");
+  need("recovery.auto_advance", (x) => x === undefined || typeof x === "boolean", "true or false if set");
 
   for (const k of ["dimension_field", "identity_field", "outcome_field"]) need(`events.${k}`, str, "a non-empty string");
   need("events.amount_field", (x) => x === undefined || str(x), "a non-empty string if set");

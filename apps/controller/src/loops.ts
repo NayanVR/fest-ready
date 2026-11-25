@@ -1,6 +1,7 @@
 // Background loops (ARCHITECTURE §5.4, §9.2, §9.6). They are separate timers, so a slow Flagsmith call in one never
 // delays the other.
-// - guardrail (every 5 s): a canary step in breach is rolled back automatically (actor "controller"). Never advances.
+// - guardrail (every 5 s): a canary step in breach is rolled back automatically (actor "controller"). Steps advance
+//   automatically only when the playbook sets recovery.auto_advance; starting recovery from PROBE_OK is always a human.
 // - probe (every tick): while Mitigated, send the playbook's probe request every `probe.every`; FALLBACK → PROBE_OK once
 //   probes have passed for `healthy_for` (checked every tick, not only after a probe), PROBE_OK → FALLBACK on a failure.
 import type { Database } from "bun:sqlite";
@@ -19,16 +20,22 @@ export async function guardrailTick(db: Database, now = Date.now()) {
   for (const r of rows) {
     const pb = incidentPlaybook(r);
     if (!pb || !r.value) continue;
-    if (stepGuardrail(db, r, pb, now).guardrail !== "breach") continue;
+    const g = stepGuardrail(db, r, pb, now);
+    const auto = pb.recovery.auto_advance === true && g.advanceAllowed;
+    if (g.guardrail !== "breach" && !auto) continue;
     await serial(async () => {
-      // Re-check inside the lock: an operator may have rolled back in the meantime.
+      // Re-check inside the lock: an operator may have acted in the meantime.
       const fresh = db.query<Row, [number]>("SELECT * FROM incidents WHERE n = ?").get(r.n);
-      if (!fresh?.state.startsWith("CANARY_")) return;
+      if (fresh?.state !== r.state || fresh.step_started_at !== r.step_started_at) return;
       const current = incidentPlaybook(fresh);
       if (!current) return;
-      const g = stepGuardrail(db, fresh, current, Date.now());
-      if (g.guardrail !== "breach") return;
-      await act(db, incidentId(r.n), "controller", { type: "rollback" }, `automatic rollback: ${g.breach ?? g.reason}`);
+      const g2 = stepGuardrail(db, fresh, current, now);
+      if (g2.guardrail === "breach")
+        await act(db, incidentId(r.n), "controller", { type: "rollback" }, `automatic rollback: ${g2.breach ?? g2.reason}`, now);
+      else if (current.recovery.auto_advance === true && g2.advanceAllowed)
+        // Playbook opted in: once an operator started recovery, each step that passes its guardrail advances by itself.
+        await act(db, incidentId(r.n), "controller", { type: "advance", guardrailPass: true, cooldownLeftMs: 0 },
+          `automatic advance: guardrail passed (${g2.samples} samples, ${current.recovery.guardrail.window} window)`, now);
     });
   }
 }

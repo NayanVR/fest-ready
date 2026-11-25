@@ -78,8 +78,8 @@ export function writePlaybook(db: Database, input: any, actor: string, id?: stri
 
 // ---------- order events and probe results ----------
 
-export function storeEvent(db: Database, body: Record<string, unknown>) {
-  db.query("INSERT INTO order_events (received_at, body) VALUES (?, ?)").run(Date.now(), JSON.stringify(body));
+export function storeEvent(db: Database, body: Record<string, unknown>, ts = Date.now()) {
+  db.query("INSERT INTO order_events (received_at, body) VALUES (?, ?)").run(ts, JSON.stringify(body));
 }
 
 export const eventsSince = (db: Database, since: number): Ev[] =>
@@ -108,6 +108,7 @@ function recoveryView(db: Database, r: Row, pb: Playbook, now = Date.now()) {
     state: r.state, splitPercent: r.split, observedSharePercent: null as number | null,
     samples: 0, minSamples: g.min_samples, errorRate: null as number | null, maxErrorRate: g.max_error_rate,
     consecutiveErrors: 0, guardrail: "wait" as "pass" | "wait" | "breach", advanceAllowed: false, reason: null as string | null,
+    autoAdvance: pb.recovery.auto_advance === true,
   };
   if (canaryStep(r.state) !== null && r.step_started_at !== null) {
     const gr = stepGuardrail(db, r, pb, now);
