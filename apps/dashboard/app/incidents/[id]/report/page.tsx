@@ -106,14 +106,14 @@ export default async function Report({ params, searchParams }: {
             <h2>{t(L.findings)}</h2>
             {f ? <>
               <p className="r-meta">{t(L.source)} <b>{f.source}</b> · {t(L.submitted)} {date(f.submittedAt)}</p>
-              <Original label={`Original, as submitted by ${f.source}`}>
-                <p className="r-pre">{f.summary}</p>
-                {!!f.evidence?.length && <ul>{f.evidence.map((e, i) => <li key={i}>{e}</li>)}</ul>}
-              </Original>
-              {translated && <Translation lang={lang}>
+              {/* Translated: show only the translation, labelled; the original stays verbatim on the incident page. */}
+              {translated ? <Translation lang={lang} of={`${f.source}'s findings`}>
                 <p className="r-pre">{t(f.summary)}</p>
                 {!!f.evidence?.length && <ul>{f.evidence.map((e, i) => <li key={i}>{t(e)}</li>)}</ul>}
-              </Translation>}
+              </Translation> : <Original label={`As submitted by ${f.source}`}>
+                <p className="r-pre">{f.summary}</p>
+                {!!f.evidence?.length && <ul>{f.evidence.map((e, i) => <li key={i}>{e}</li>)}</ul>}
+              </Original>}
             </> : <p>{t(L.noFindings)}</p>}
           </section>
 
@@ -151,8 +151,8 @@ export default async function Report({ params, searchParams }: {
           <section>
             <h2>{t(L.closing)}</h2>
             {close ? <>
-              <Original label="Original, as written by the operator"><p className="r-pre">{close}</p></Original>
-              {translated && <Translation lang={lang}><p className="r-pre">{t(close)}</p></Translation>}
+              {translated ? <Translation lang={lang} of="the operator's note"><p className="r-pre">{t(close)}</p></Translation>
+                : <Original label="As written by the operator"><p className="r-pre">{close}</p></Original>}
             </> : <p>{t(L.noNote)}</p>}
           </section>
         </>}
@@ -168,6 +168,6 @@ export default async function Report({ params, searchParams }: {
 const Original = ({ label, children }: { label: string; children: React.ReactNode }) => (
   <div className="r-orig" lang="en"><p className="r-label">{label}</p>{children}</div>
 );
-const Translation = ({ lang, children }: { lang: string; children: React.ReactNode }) => (
-  <div className="r-tr" lang={lang}><p className="r-label" lang="en">Machine translation by Sarvam — original above</p>{children}</div>
+const Translation = ({ lang, of, children }: { lang: string; of: string; children: React.ReactNode }) => (
+  <div className="r-tr" lang={lang}><p className="r-label" lang="en">Machine translation by Sarvam of {of} · English original on the incident page</p>{children}</div>
 );
