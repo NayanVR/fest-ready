@@ -16,7 +16,7 @@ const fixture = Bun.serve({
   port: 0,
   async fetch(req) {
     const { pathname, searchParams } = new URL(req.url);
-    if (pathname === "/api/orders" && req.method === "POST") {
+    if ((pathname === "/api/orders" || pathname === "/api/payments") && req.method === "POST") {
       const body = await req.json();
       if (body.fixtureRedirect) return new Response(null, { status: 307, headers: { Location: "/fixture/redirect-target" } });
       if (body.fixtureUnhealthy || body.synthetic !== true)
@@ -69,6 +69,7 @@ const upstream = fixture.url.origin;
 if (process.env.B7_FIXTURE_NO_UPSTREAMS !== "1") {
   process.env.SHOP_URL = upstream;
   process.env.PROMETHEUS_URL = upstream;
+  process.env.FLAGSMITH_ADMIN_URL = upstream + "/api/v1/";
   process.env.FLAGSMITH_MGMT_TOKEN = "fixture-management";
   process.env.FLAGSMITH_PROJECT_ID = "1";
   process.env.FLAGSMITH_ENV_ID = "1";
@@ -77,7 +78,6 @@ if (process.env.B7_FIXTURE_NO_UPSTREAMS !== "1") {
 const networkFetch = globalThis.fetch;
 globalThis.fetch = Object.assign(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
   const url = new URL(String(input));
-  if (url.origin === "https://api.flagsmith.com") return networkFetch(upstream + url.pathname + url.search, init);
   if (url.origin === upstream) return networkFetch(input, init);
   throw new Error("unexpected upstream destination in playbook API fixture");
 }, networkFetch);

@@ -82,7 +82,8 @@ test("playbook writes use real HTTP, audit atomically, and preserve an incident'
     unsafe.probe.request.body = { token: "${FLAGSMITH_MGMT_TOKEN}" };
     expect(await call(collection, "POST", unsafe)).toMatchObject({
       status: 422, body: { error: "INVALID_PLAYBOOK", reasons: [
-        "probe.request must POST to ${SHOP_URL}/api/orders", "probe.request.body must not contain environment placeholders",
+        "probe.request must POST to ${SHOP_URL}/api/orders or ${SHOP_URL}/api/payments",
+        "probe.request.body must not contain environment placeholders",
       ] },
     });
     expect(await call(item, "PUT", draft)).toMatchObject({ status: 404, body: { error: "NOT_FOUND" } });
@@ -239,6 +240,15 @@ test("wizard discovers live fixture inputs and checks drafts without changing sa
     Object.assign(probeDraft.probe.request.body as object, { fixtureRedirect: true });
     expect(await call(wizard + "probe", "POST", { playbook: probeDraft, value })).toEqual({
       status: 502, body: { error: "UPSTREAM_ERROR", message: "Shop API request failed" },
+    });
+
+    probeDraft.probe.request.url = "${SHOP_URL}/api/payments";
+    expect(await call(wizard + "probe", "POST", { playbook: probeDraft, value })).toEqual({
+      status: 502, body: { error: "UPSTREAM_ERROR", message: "Shop API request failed" },
+    });
+    probeDraft.probe.request.body = seed.probe.request.body;
+    expect(await call(wizard + "probe", "POST", { playbook: probeDraft, value })).toEqual({
+      status: 200, body: { healthy: true, status: seed.probe.expect.healthy.status, error: null },
     });
     expect((await call("/api/audit")).body).toEqual([]);
     expect((await call("/api/incidents")).body).toEqual([]);

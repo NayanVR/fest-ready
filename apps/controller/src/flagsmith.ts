@@ -14,7 +14,8 @@ function env(name: string): string {
 }
 
 async function api(method: string, path: string, body?: unknown): Promise<any> {
-  const res = await fetch(BASE + path, {
+  const base = process.env.FLAGSMITH_ADMIN_URL?.trim().replace(/\/+$/, "") || BASE;
+  const res = await fetch(base + path, {
     method,
     headers: { Authorization: `Api-Key ${env("FLAGSMITH_MGMT_TOKEN")}`, "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),

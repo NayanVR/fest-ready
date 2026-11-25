@@ -181,15 +181,16 @@ export function persistPlaybook(db: Database, input: Omit<Playbook, "version">, 
   return playbook;
 }
 
-// API-managed probes can call only the configured shop order endpoint. Network-bound
+// API-managed probes can call only the configured shop endpoints. Network-bound
 // templates must not expand credentials from the controller environment.
 export function validateWritablePlaybook(input: unknown): string[] {
   const reasons = validatePlaybook(input);
   if (reasons.length) return reasons;
   const pb = input as Playbook;
   if (pb.recovery.method !== "split") reasons.push("recovery.method must be split");
-  if (pb.probe.request.method !== "POST" || pb.probe.request.url !== "${SHOP_URL}/api/orders")
-    reasons.push("probe.request must POST to ${SHOP_URL}/api/orders");
+  const { method, url } = pb.probe.request;
+  if (method !== "POST" || (url !== "${SHOP_URL}/api/orders" && url !== "${SHOP_URL}/api/payments"))
+    reasons.push("probe.request must POST to ${SHOP_URL}/api/orders or ${SHOP_URL}/api/payments");
   const envPlaceholder = /\$\{[A-Za-z_][A-Za-z0-9_]*\}/;
   if (envPlaceholder.test(JSON.stringify(pb.probe.request.body) ?? ""))
     reasons.push("probe.request.body must not contain environment placeholders");
