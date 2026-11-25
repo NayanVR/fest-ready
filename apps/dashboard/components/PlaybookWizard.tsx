@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ComponentProps, FormEvent } from "react";
 import type { Playbook, PlaybookRow } from "@/lib/types";
-import { operator, Pill, post } from "./ui";
+import { Pill, post } from "./ui";
 
 const stages = ["Basics", "Scope", "Signals", "Recovery", "Probe", "Review"];
 const jsonText = (value: unknown) => value === undefined ? "" : JSON.stringify(value, null, 2);
@@ -227,7 +227,7 @@ export default function PlaybookWizard({ playbook, onCancel, onSave }: {
     setSaving(true);
     const result = await post(
       playbook ? `playbooks/${encodeURIComponent(playbook.id)}` : "playbooks",
-      { ...draft, actor: operator() },
+      draft,
       playbook ? "PUT" : "POST",
     );
     setSaving(false);

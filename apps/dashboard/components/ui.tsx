@@ -41,11 +41,6 @@ export const describe = (r: Result) =>
   r.ok ? "done" : `${r.json?.error ?? r.status}${r.json?.message ? `: ${r.json.message}` : ""}${
     r.json?.reasons ? ` (${r.json.reasons.join("; ")})` : ""}`;
 
-// The operator name lives in the nav (localStorage) and goes out as `actor`.
-export const operator = () => {
-  try { return localStorage.getItem("operator")?.trim() || "operator"; } catch { return "operator"; }
-};
-
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 // Shown as the controller sent them (no timezone conversion), so server and browser render identically.
 export const fmt = (ts?: string | null) =>

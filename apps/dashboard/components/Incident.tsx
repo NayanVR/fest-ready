@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Banner, Bar, Btn, Loaded, Notice, Pill, clock, fmt, money, operator, pct, statusKind, useAction, usePoll } from "./ui";
+import { Banner, Bar, Btn, Loaded, Notice, Pill, clock, fmt, money, pct, statusKind, useAction, usePoll } from "./ui";
 import type { Evidence, Incident as Inc, Playbook, PlaybookRow, Recovery } from "@/lib/types";
 
 // healthySince → seconds. `probe.healthyFor` from the controller is the *required* duration (playbook healthy_for), not elapsed.
@@ -56,7 +56,7 @@ export default function Incident({ id, initial }: { id: string; initial: Loaded<
         <Pill kind={statusKind(inc.status)}>{inc.status}</Pill>
         <span className="sp" />
         <span className="muted">Owner {inc.owner ?? "–"}</span>
-        {!inc.owner && <Btn busy={busy} label="Take ownership" onClick={() => act("Take ownership", "ack", { owner: operator() })}>Take ownership</Btn>}
+        {!inc.owner && <Btn busy={busy} label="Take ownership" onClick={() => act("Take ownership", "ack", {})}>Take ownership</Btn>}
       </div>
       <p className="sub">{inc.title}{inc.title.includes(inc.alert) ? "" : ` · alert ${inc.alert}`}</p>
       <Banner error={error} />
@@ -114,7 +114,7 @@ export default function Incident({ id, initial }: { id: string; initial: Loaded<
                     {steps.length > 0 && <> Recovery later in steps {steps.join("% → ")}%, each one approved by an operator.</>}
                   </p>
                   <div className="actions">
-                    <Btn className="primary" busy={busy} label="Approve" onClick={() => act("Approve", "approve", { actor: operator() })}>Approve</Btn>
+                    <Btn className="primary" busy={busy} label="Approve" onClick={() => act("Approve", "approve", {})}>Approve</Btn>
                     <span className="muted">Approving can take up to ~30 s while Flagsmith confirms the change.</span>
                   </div>
                 </>
@@ -159,13 +159,13 @@ export default function Incident({ id, initial }: { id: string; initial: Loaded<
               </div>}
               <div className="actions">
                 <Btn className="primary" busy={busy} label="Advance" disabled={!rec.advanceAllowed || done}
-                  onClick={() => act("Advance", "advance", { actor: operator() })}>
+                  onClick={() => act("Advance", "advance", {})}>
                   {(rec.state === "NORMAL" || rec.state === "CLOSED") ? "Advance"
                     : rec.state === "PROBE_OK" || rec.state === "FALLBACK" ? `Start recovery at ${steps[0] ?? "first step"}%`
                     : nextStep ? `Advance to ${nextStep}%` : "Finish recovery (fallback off)"}
                 </Btn>
                 <Btn className="danger" busy={busy} label="Rollback" disabled={rec.splitPercent === 0 || done}
-                  onClick={() => act("Rollback", "rollback", { actor: operator() })}>Rollback to 0%</Btn>
+                  onClick={() => act("Rollback", "rollback", {})}>Rollback to 0%</Btn>
                 {!rec.advanceAllowed && !done && <span className="muted">{whyNot(rec, inc.probe)}{rec.autoAdvance && rec.state.startsWith("CANARY_") ? " Advances by itself when the guardrail passes." : ""}</span>}
               </div>
             </section>
@@ -238,7 +238,7 @@ export default function Incident({ id, initial }: { id: string; initial: Loaded<
               <h2>Close incident</h2>
               <form className="form" style={{ marginTop: 8 }} onSubmit={async (e) => {
                 e.preventDefault();
-                await act("Close", "close", { note: closing.trim(), actor: operator() }, () => setClosing(""));
+                await act("Close", "close", { note: closing.trim() }, () => setClosing(""));
               }}>
                 <label>Closing note (required)
                   <textarea value={closing} onChange={(e) => setClosing(e.target.value)} required />

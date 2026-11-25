@@ -1,5 +1,6 @@
 // Browser → controller proxy. The only place ADMIN_SECRET is used; it is added to writes server-side.
 import { NextRequest } from "next/server";
+import { COOKIE, readSession } from "@/lib/session";
 import { controllerUrl } from "@/lib/server";
 
 const ID = "[A-Za-z0-9-]+";
@@ -14,6 +15,21 @@ const ALLOWED: [string, RegExp][] = [
   ["POST", /^playbook-wizard\/(flags|label-values|event-fields|readiness|probe)$/],
   ["POST", /^fault$/],
 ];
+
+// The audit name comes from the session, never from the browser: overwrite `actor` (and `owner` on ack) in object bodies.
+async function withActor(req: NextRequest, path: string) {
+  const text = await req.text();
+  const user = await readSession(req.cookies.get(COOKIE)?.value);
+  try {
+    const j = JSON.parse(text);
+    if (user && j && typeof j === "object" && !Array.isArray(j)) {
+      j.actor = user;
+      if (path.endsWith("/ack")) j.owner = user;
+      return JSON.stringify(j);
+    }
+  } catch {}
+  return text;
+}
 
 async function proxy(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   const path = (await params).path.join("/");
@@ -30,7 +46,7 @@ async function proxy(req: NextRequest, { params }: { params: Promise<{ path: str
     const r = await fetch(`${controllerUrl()}/api/${path}${req.nextUrl.search}`, {
       method: req.method,
       headers,
-      body: write ? await req.text() : undefined,
+      body: write ? await withActor(req, path) : undefined,
       cache: "no-store",
       // approve/advance/rollback make several Flagsmith calls (~30 s seen)
       signal: AbortSignal.timeout(60000),

@@ -1,9 +1,12 @@
 import "./globals.css";
+import { cookies } from "next/headers";
 import Nav from "@/components/Nav";
+import { COOKIE, readSession } from "@/lib/session";
 
 export const metadata = { title: "FestReady ops" };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const user = (await readSession((await cookies()).get(COOKIE)?.value)) ?? undefined;
   return (
     <html lang="en">
       <head>
@@ -13,7 +16,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <div className="shell">
-          <Nav />
+          <Nav user={user} />
           <main className="canvas">{children}</main>
         </div>
       </body>

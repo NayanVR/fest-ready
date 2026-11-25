@@ -41,6 +41,9 @@ p { margin: 0; }
 .side .foot { margin-top: auto; display: flex; flex-direction: column; gap: 10px; padding: 0 4px; }
 .side .rule { color: var(--muted); font-size: 12px; line-height: 16px; padding: 0 6px; }
 .side .foot small { color: var(--muted); font-size: 12px; line-height: 16px; font-weight: 400; }
+.side .who { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 0 6px; }
+.side .who span { color: var(--muted); overflow-wrap: anywhere; }
+.side .who b { color: var(--text); font-weight: 500; }
 .side .body { display: flex; flex-direction: column; gap: 4px; flex: 1; }
 .menu { display: none; }
 .canvas { padding: 32px var(--pad) 64px; min-width: 0; }
@@ -270,3 +273,18 @@ ul.plain { margin: 8px 0 0; padding-left: 18px; color: var(--muted); }
   .hide-sm { display: none; }
   button, input, select { min-height: 44px; }
 }
+
+/* login (no sidebar: the shell collapses to one column while the login card is on screen) */
+.shell:has(.login) { grid-template-columns: 1fr; }
+.shell:has(.login) .canvas { padding: 0; }
+.login { min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; }
+.login .card { width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 16px; padding: 28px; }
+.login .brand { display: flex; align-items: center; gap: 10px; }
+.login .brand b { display: block; font-weight: 500; font-size: 15px; line-height: 18px; }
+.login .brand small { display: block; color: var(--muted); font-size: 12px; line-height: 16px; }
+.login .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 2px; background: var(--raised); border-radius: var(--radius-control); }
+.login .seg button { border: 0; background: none; justify-content: center; color: var(--muted); }
+.login .seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); font-weight: 500; }
+.login label small { color: var(--muted); font-weight: 400; font-size: 12px; line-height: 16px; }
+.login .err { background: var(--bad-bg); color: var(--bad-ink); border-radius: var(--radius-control); padding: 8px 10px; }
+.login .primary { justify-content: center; }

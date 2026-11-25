@@ -6,12 +6,12 @@ import { useEffect, useState } from "react";
 const LINKS = [["/", "Overview"], ["/playbooks", "Playbooks"], ["/audit", "Audit log"]] as const;
 const TOOLS = [["/storefront", "Storefront"], ["/demo", "Demo controls"]] as const;
 
-export default function Nav() {
+export default function Nav({ user }: { user?: string }) {
   const path = usePathname();
-  const [name, setName] = useState("");
   const [open, setOpen] = useState(false);
-  useEffect(() => { try { setName(localStorage.getItem("operator") ?? ""); } catch {} }, []);
   useEffect(() => setOpen(false), [path]);
+  const logout = async () => { await fetch("/api/auth/logout", { method: "POST" }); location.assign("/login"); };
+  if (path === "/login") return null;
   const item = ([href, label]: readonly [string, string]) => {
     const on = href === "/" ? path === "/" || path.startsWith("/incidents") : path.startsWith(href);
     return <Link key={href} href={href} aria-current={on ? "page" : undefined}>{label}</Link>;
@@ -31,13 +31,10 @@ export default function Nav() {
         <nav aria-label="Demo">{TOOLS.map(item)}</nav>
         <div className="foot">
           <div className="rule">fallback &amp; recovery start: operator · steps &amp; rollback: automatic</div>
-          <label>Your name
-            <input
-              aria-label="Your name, recorded in the audit log" placeholder="e.g. Nayan" value={name}
-              onChange={(e) => { setName(e.target.value); try { localStorage.setItem("operator", e.target.value); } catch {} }}
-            />
-            <small>Signs your Approve, Advance, Rollback and Close in the audit log.</small>
-          </label>
+          <div className="who">
+            <span>Signed in as <b>{user}</b></span>
+            <button onClick={logout}>Log out</button>
+          </div>
         </div>
       </div>
     </aside>
