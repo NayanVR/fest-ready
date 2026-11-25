@@ -31,11 +31,12 @@ export default function Nav() {
         <nav aria-label="Demo">{TOOLS.map(item)}</nav>
         <div className="foot">
           <div className="rule">advance: operator · rollback: automatic</div>
-          <label>Operator
+          <label>Your name
             <input
-              aria-label="Operator name" placeholder="operator" value={name}
+              aria-label="Your name, recorded in the audit log" placeholder="e.g. Nayan" value={name}
               onChange={(e) => { setName(e.target.value); try { localStorage.setItem("operator", e.target.value); } catch {} }}
             />
+            <small>Signs your Approve, Advance, Rollback and Close in the audit log.</small>
           </label>
         </div>
       </div>
