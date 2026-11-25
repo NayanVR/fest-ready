@@ -33,6 +33,9 @@ spec:
         - name: ADMIN_SECRET
           valueFrom:
             secretKeyRef: {name: app-secrets, key: ADMIN_SECRET}
+        - name: SARVAM_API_KEY
+          valueFrom:
+            secretKeyRef: {name: app-secrets, key: SARVAM_API_KEY, optional: true}
 ---
 apiVersion: v1
 kind: Service
