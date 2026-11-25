@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import Mascot, { type MascotMood } from "./Mascot";
+import { IconAvailability, IconIncidents, IconReady, StatusIcon } from "./icons";
 import { Banner, Loaded, Pill, fmt, pct, statusKind, usePoll } from "./ui";
 import type { IncidentRow, PlaybookRow, State } from "@/lib/types";
 
@@ -46,18 +47,18 @@ export default function Overview(p: { state: Loaded<State>; incidents: Loaded<In
       <div className={`kpis${availability.size ? " kpis-by-service" : ""}`}>
         {serviceAvailability.map(([dimension, value]) => (
           <div key={dimension}>
-            <div className="label">{availabilityLabel(dimension)}</div>
+            <div className="label"><IconAvailability />{availabilityLabel(dimension)}</div>
             <div className={`val ${value == null ? "dim" : "data"}`}>{pct(value)}</div>
             <div className="note">{!s ? "Loading…" : value == null ? "No attempts in the last 5 min" : "Last 5 min, all cohorts"}</div>
           </div>
         ))}
         <div>
-          <div className="label">Open incidents</div>
+          <div className="label"><IconIncidents />Open incidents</div>
           <div className="val">{s?.openIncidents ?? "–"}</div>
           <div className="note">{s?.openIncidents ? "Not yet closed" : "Nothing needs action"}</div>
         </div>
         <div>
-          <div className="label">Playbooks</div>
+          <div className="label"><IconReady />Playbooks</div>
           <div className="val">{s ? s.playbooks.ready : "–"}<small>ready</small>{!!s?.playbooks.broken && <>{" "}{s.playbooks.broken}<small>broken</small></>}</div>
           <div className="note">{s && s.playbooks.broken === 0 ? "All pass their readiness check" : "Broken playbooks cannot be applied"}</div>
         </div>
@@ -74,7 +75,7 @@ export default function Overview(p: { state: Loaded<State>; incidents: Loaded<In
                   <tr key={i.id}>
                     <td className="id"><Link href={`/incidents/${i.id}`}>{i.id}</Link></td>
                     <td>{i.title}</td>
-                    <td><Pill kind={statusKind(i.status)}>{i.status ?? "–"}</Pill></td>
+                    <td><Pill kind={statusKind(i.status)}><StatusIcon status={i.status} />{i.status ?? "–"}</Pill></td>
                     <td className="hide-sm">{i.owner ?? <span className="muted">–</span>}</td>
                     <td className="hide-sm">{fmt(i.openedAt)}</td>
                   </tr>

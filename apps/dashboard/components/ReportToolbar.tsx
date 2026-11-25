@@ -1,6 +1,7 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
+import { IconPrint } from "./icons";
 
 // Screen-only bar on the report: pick a language (reloads with ?lang) and print to PDF.
 export default function ReportToolbar({ id, lang, langs }: { id: string; lang: string; langs: string[][] }) {
@@ -16,7 +17,7 @@ export default function ReportToolbar({ id, lang, langs }: { id: string; lang: s
         </select>
       </label>
       {pending && <span className="muted" role="status">Translating…</span>}
-      <button className="primary" onClick={() => window.print()} disabled={pending}>Save as PDF</button>
+      <button className="primary" onClick={() => window.print()} disabled={pending}><IconPrint size={16} />Save as PDF</button>
     </div>
   );
 }

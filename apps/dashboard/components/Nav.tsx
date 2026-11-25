@@ -2,18 +2,19 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { IconAudit, IconDemo, IconExternal, IconLogout, IconOverview, IconPlaybooks, IconStore } from "./icons";
 
-const LINKS = [["/", "Overview"], ["/playbooks", "Playbooks"], ["/audit", "Audit log"]] as const;
-const TOOLS = [["/demo", "Demo controls"]] as const;
+const LINKS = [["/", "Overview", IconOverview], ["/playbooks", "Playbooks", IconPlaybooks], ["/audit", "Audit log", IconAudit]] as const;
+const TOOLS = [["/demo", "Demo controls", IconDemo]] as const;
 
 export default function Nav({ user, paymentDemo }: { user?: string; paymentDemo: boolean }) {
   const path = usePathname();
   const [open, setOpen] = useState(false);
   useEffect(() => setOpen(false), [path]);
   const logout = async () => { await fetch("/api/auth/logout", { method: "POST" }); location.assign("/login"); };
-  const item = ([href, label]: readonly [string, string]) => {
+  const item = ([href, label, Icon]: readonly [string, string, typeof IconOverview]) => {
     const on = href === "/" ? path === "/" || path.startsWith("/incidents") : path.startsWith(href);
-    return <Link key={href} href={href} aria-current={on ? "page" : undefined}>{label}</Link>;
+    return <Link key={href} href={href} aria-current={on ? "page" : undefined}><Icon />{label}</Link>;
   };
   return (
     <aside className="side">
@@ -29,7 +30,7 @@ export default function Nav({ user, paymentDemo }: { user?: string; paymentDemo:
         <div className="group">Demo</div>
         <nav aria-label="Demo">
           {TOOLS.map(item)}
-          <a href="/store" target="_blank" rel="noreferrer">Storefront ↗</a>
+          <a href="/store" target="_blank" rel="noreferrer"><IconStore />Storefront<span className="ext"><IconExternal size={14} /></span><span className="sr-only"> (opens in a new tab)</span></a>
         </nav>
         <div className="foot">
           <div className="rule">{paymentDemo
@@ -37,7 +38,7 @@ export default function Nav({ user, paymentDemo }: { user?: string; paymentDemo:
             : "fallback & recovery start: operator · steps & rollback: automatic"}</div>
           <div className="who">
             <span>Signed in as <b>{user}</b></span>
-            <button onClick={logout}>Log out</button>
+            <button onClick={logout}><IconLogout size={16} />Log out</button>
           </div>
         </div>
       </div>

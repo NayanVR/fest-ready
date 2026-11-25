@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import Mascot, { type MascotMood } from "./Mascot";
+import { IconDownload, IconExternal, IconReport, StatusIcon } from "./icons";
 import { Banner, Bar, Btn, Loaded, Notice, Pill, clock, fmt, money, pct, statusKind, useAction, usePoll } from "./ui";
 import type { Evidence, Incident as Inc, Playbook, PlaybookRow, Recovery } from "@/lib/types";
 
@@ -60,7 +61,7 @@ export default function Incident({ id, initial }: { id: string; initial: Loaded<
       <div className="titlerow">
         <Mascot mood={mood} size={56} />
         <h1 className="id" style={{ fontFamily: "var(--font)" }}>{inc.id}</h1>
-        <Pill kind={statusKind(inc.status)}>{inc.status}</Pill>
+        <Pill kind={statusKind(inc.status)}><StatusIcon status={inc.status} />{inc.status}</Pill>
         <span className="sp" />
         <span className="muted">Owner {inc.owner ?? "–"}</span>
         {!inc.owner && <Btn busy={busy} label="Take ownership" onClick={() => act("Take ownership", "ack", {})}>Take ownership</Btn>}
@@ -226,8 +227,8 @@ export default function Incident({ id, initial }: { id: string; initial: Loaded<
                 </dl>
               )}
               <div className="row">
-                <a className="btn" href={`/api/c/incidents/${id}/evidence`} download={`${id}-evidence.json`}>Download JSON</a>
-                <a className="btn" href={`/api/c/incidents/${id}/evidence?format=csv`} download={`${id}-evidence.csv`}>Download CSV</a>
+                <a className="btn" href={`/api/c/incidents/${id}/evidence`} download={`${id}-evidence.json`}><IconDownload size={16} />Download JSON</a>
+                <a className="btn" href={`/api/c/incidents/${id}/evidence?format=csv`} download={`${id}-evidence.csv`}><IconDownload size={16} />Download CSV</a>
               </div>
             </section>
           )}
@@ -242,7 +243,7 @@ export default function Incident({ id, initial }: { id: string; initial: Loaded<
                     {REPORT_LANGS.map(([c, n]) => <option key={c} value={c}>{n}</option>)}
                   </select>
                 </label>
-                <a className="btn" href={`/incidents/${encodeURIComponent(id)}/report?lang=${lang}`} target="_blank" rel="noreferrer">Open report ↗</a>
+                <a className="btn" href={`/incidents/${encodeURIComponent(id)}/report?lang=${lang}`} target="_blank" rel="noreferrer"><IconReport size={16} />Open report<IconExternal size={14} /></a>
               </div>
             </section>
           )}
