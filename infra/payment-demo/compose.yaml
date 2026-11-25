@@ -39,6 +39,7 @@ services:
   dashboard:
     build: ../../apps/dashboard
     depends_on: [controller, shop-api]
+    networks: [default, browser]
     ports:
       - "127.0.0.1:${PAYMENT_DEMO_PORT:-3100}:3000"
     environment:
@@ -56,3 +57,4 @@ services:
 networks:
   default:
     internal: true
+  browser: {}
