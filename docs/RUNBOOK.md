@@ -76,7 +76,7 @@ Full rehearsal on 24 Nov (18:11–18:56 UTC): approve → probe → 5/10/50% →
 | Approve → **Mitigated** (Mumbai shows pickup only) | operator | — |
 | Clear the outage; probe healthy for `healthy_for` (60 s) → PROBE_OK | automatic | +1 m |
 | **Start recovery at 5%** (the one recovery click) | operator | PROBE_OK ~60–70 s after clearing the outage |
-| 5% → 10% → 50% → 100% → Resolved (fallback off); no Advance clicks, each step needs 10 canary orders + 20 s window | automatic (`recovery.auto_advance`, audit "automatic advance: guardrail passed") | ~166 s for the whole ladder (25 Nov) |
+| 5% → 10% → 50% → 100% → Resolved (fallback off); no Advance clicks, each step needs 10 canary orders + 20 s window | automatic (`recovery.auto_advance`, audit "automatic advance: guardrail passed") | ~130–170 s for the whole ladder (25 Nov: 166 s, 133 s; the 5% step is the slowest, ~70–80 s) |
 | Optional: outage again during a canary step → **automatic rollback**, then 60 s cooldown | automatic | 2 s (measured at 50%, 25 Nov; 8 s on 24 Nov) |
 | Close with a note | operator | — |
 

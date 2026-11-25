@@ -29,7 +29,7 @@ The real run is longer than a 5–7 min slot, because NuBi alone takes ~5–6 mi
 | ~11:00 | 9 Resolve | none (automatic) | **Resolved**; 100% on delivery, fallback off |
 | ~11:30 | 10 Close | closing note → **Close incident** | **Closed**; impact numbers |
 
-Short mode skips beat 8: it ends about 11:30 after T, so the on-stage part runs from ~4:30 to ~11:30, about 7 min. Re-time at rehearsal; the automatic ladder is ~166 s (25 Nov).
+Short mode skips beat 8: it ends about 11:30 after T, so the on-stage part runs from ~4:30 to ~11:30, about 7 min. Re-time at rehearsal; the automatic ladder is ~130–170 s (25 Nov rehearsal 2: outage → NuBi findings +5:11, Approve +5:20, ladder 133 s, closed +12:18).
 
 ---
 
