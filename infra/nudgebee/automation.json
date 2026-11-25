@@ -1,0 +1,38 @@
+{
+  "name": "festive-rush investigate delivery alert",
+  "definition": {
+    "version": "v1",
+    "timeout": "20m",
+    "inputs": [],
+    "output": {},
+    "tasks": [
+      {
+        "id": "llm_event_investigate",
+        "type": "llm.event_investigate",
+        "params": {
+          "account_id": "3ea2aa97-1ed9-4977-9498-857de597b5cb",
+          "event_id": "{{ Inputs.event.id }}"
+        }
+      },
+      {
+        "id": "llm_nubi",
+        "type": "llm.nubi",
+        "params": {
+          "account_id": "3ea2aa97-1ed9-4977-9498-857de597b5cb",
+          "approved_tools": [],
+          "message": "A {{ Inputs.event.event_type }} alert fired on cluster {{ Inputs.event.cluster }} at {{ Inputs.event.starts_at }} (NudgeBee event {{ Inputs.event.id }}). Investigate it using current metrics, logs and Kubernetes state, and follow the account rules for this alert, including reporting your conclusion to the festive-rush-controller MCP server.",
+          "session_scope": "execution"
+        }
+      }
+    ],
+    "triggers": [
+      {
+        "type": "event",
+        "params": { "filter": "{{ event.event_type == \"DeliveryAvailabilityLow\" }}" }
+      }
+    ],
+    "retry_policy": { "maximum_attempts": 3, "initial_interval": "1s", "maximum_interval": "1m", "backoff_coefficient": 2 }
+  },
+  "tags": {},
+  "status": "ACTIVE"
+}
