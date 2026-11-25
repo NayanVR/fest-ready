@@ -1,0 +1,33 @@
+id: city-delivery-fallback
+version: 1
+owner: delivery-team
+description: >
+  Home delivery fails for one city because that city's courier provider is failing.
+  Fallback: disable home delivery for that city; in-store pickup keeps working.
+match: { alerts: [DeliveryAvailabilityLow], cause: external }
+dimension: { name: city, trait: city, label: city, values: [bengaluru, mumbai, delhi] }
+flag:
+  key: home_delivery_enabled
+  normal:   { enabled: true }
+  fallback: { enabled: false }
+segments: { fallback: "{value}-fallback", recovery: "{value}-recovery" }
+recovery:
+  method: split
+  steps: [5, 10, 50, 100]
+  guardrail: { min_samples: 10, max_error_rate: 0.05, max_consecutive_errors: 3, window: 20s }
+  cooldown_after_rollback: 60s
+events:
+  dimension_field: city
+  identity_field: customerId
+  outcome_field: outcome
+  amount_field: amount
+  canary_filter: { mode: delivery }
+health:   # optional PromQL alternative to events; [VERIFY] against real metrics
+  errors: sum(rate(courier_dispatch_total{city="{value}",status!="200"}[1m]))
+  total:  sum(rate(courier_dispatch_total{city="{value}"}[1m]))
+probe:
+  every: 10s
+  healthy_for: 60s
+  identities: { bengaluru: cust-blr-0001, mumbai: cust-mum-0001, delhi: cust-del-0001 }
+  request: { method: POST, url: "${SHOP_URL}/api/orders", body: { customerId: "{probe_identity}", mode: delivery, synthetic: true } }
+  expect: { healthy: { status: 201 }, fallback_active: { status: 409 } }
