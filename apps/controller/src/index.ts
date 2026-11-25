@@ -8,7 +8,7 @@ import { log } from "./log.ts";
 import { startLoops } from "./loops.ts";
 import { handleMcp } from "./mcp.ts";
 import { getPlaybook, listPlaybooks, seedPlaybooks } from "./playbooks.ts";
-import { wizardEventFields, wizardFlags, wizardLabelValues, wizardProbe, wizardReadiness } from "./playbook-wizard.ts";
+import { wizardCatalog, wizardEventFields, wizardFlags, wizardLabelValues, wizardProbe, wizardReadiness } from "./playbook-wizard.ts";
 import { toCsv } from "./recovery.ts";
 import { playbooksWithReadiness, readiness, state } from "./status.ts";
 
@@ -104,6 +104,7 @@ const server = Bun.serve({
         return pb ? json({ ...pb, ...(await readiness(db, pb, true)) }) : fail(404, "NOT_FOUND", `${req.params.id} not found`);
       }),
     },
+    "/api/playbook-wizard/catalog": { POST: wizard((input) => wizardCatalog(db, input)) },
     "/api/playbook-wizard/flags": { POST: wizard(wizardFlags) },
     "/api/playbook-wizard/label-values": { POST: wizard(wizardLabelValues) },
     "/api/playbook-wizard/event-fields": { POST: wizard((input) => wizardEventFields(db, input)) },

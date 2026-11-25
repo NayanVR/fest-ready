@@ -12,7 +12,7 @@ const ALLOWED: [string, RegExp][] = [
   ["POST", new RegExp(`^playbooks/${ID}/check$`)],
   ["POST", /^playbooks$/],
   ["PUT", new RegExp(`^playbooks/${ID}$`)],
-  ["POST", /^playbook-wizard\/(flags|label-values|event-fields|readiness|probe)$/],
+  ["POST", /^playbook-wizard\/(catalog|flags|label-values|event-fields|readiness|probe)$/],
   ["POST", /^fault$/],
 ];
 
@@ -43,10 +43,11 @@ async function proxy(req: NextRequest, { params }: { params: Promise<{ path: str
     headers["x-admin-secret"] = process.env.ADMIN_SECRET ?? "";
   }
   try {
+    const body = !write ? undefined : path.startsWith("playbook-wizard/") ? await req.text() : await withActor(req, path);
     const r = await fetch(`${controllerUrl()}/api/${path}${req.nextUrl.search}`, {
       method: req.method,
       headers,
-      body: write ? await withActor(req, path) : undefined,
+      body,
       cache: "no-store",
       // approve/advance/rollback make several Flagsmith calls (~30 s seen)
       signal: AbortSignal.timeout(60000),

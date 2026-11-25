@@ -13,13 +13,13 @@ function env(name: string): string {
   return v;
 }
 
-async function api(method: string, path: string, body?: unknown): Promise<any> {
+async function api(method: string, path: string, body?: unknown, signal = AbortSignal.timeout(15_000)): Promise<any> {
   const base = process.env.FLAGSMITH_ADMIN_URL?.trim().replace(/\/+$/, "") || BASE;
   const res = await fetch(base + path, {
     method,
     headers: { Authorization: `Api-Key ${env("FLAGSMITH_MGMT_TOKEN")}`, "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
-    signal: AbortSignal.timeout(15_000),
+    signal,
   });
   const text = await res.text();
   if (!res.ok) throw new Error(`Flagsmith ${method} ${path} → ${res.status}: ${text.slice(0, 300)}`);
@@ -38,6 +38,30 @@ export async function searchFeatureNames(term: string): Promise<string[]> {
   const features = await searchFeatures(term);
   return [...new Set(features.slice(0, 100).map(({ name }) => name).filter((name) => typeof name === "string"))].sort();
 }
+
+async function catalogNames(resource: "features" | "segments", filter: "search" | "q"): Promise<string[]> {
+  const limit = 1000;
+  const names = new Set<string>();
+  const signal = AbortSignal.timeout(5000);
+  const path = `${project()}/${resource}/`;
+  const params = new URLSearchParams([[filter, ""]]);
+  for (let page = 1; page <= 10 && names.size < limit; page++) {
+    const result = await api("GET", `${path}?${params}`, undefined, signal);
+    if (!Array.isArray(result?.results)) throw new Error("Invalid Flagsmith catalog response");
+    for (const entry of result.results) {
+      if (typeof entry?.name === "string" && entry.name.trim()) names.add(entry.name);
+    }
+    if (typeof result.next !== "string" || !result.next) break;
+    // Reconstruct the next request against the configured project endpoint.
+    const next = new URL(result.next, BASE).searchParams.get("page");
+    if (next !== String(page + 1)) break;
+    params.set("page", next);
+  }
+  return Array.from(names).sort().slice(0, limit);
+}
+
+export const listFeatureNames = () => catalogNames("features", "search");
+export const listSegmentNames = () => catalogNames("segments", "q");
 
 // Search is a substring match, so filter for the exact name.
 export async function findFeatureId(name: string): Promise<number | null> {
