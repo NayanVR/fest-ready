@@ -19,7 +19,7 @@ flowchart LR
     Voice -->|"Outbound reminder call"| Operator
 ```
 
-1. **Investigate.** Prometheus detects a delivery availability drop. NudgeBee's NuBi uses Sarvam 105B to investigate and submits its findings to the controller over MCP.
+1. **Investigate.** Prometheus detects a delivery availability drop. NudgeBee's NuBi uses Sarvam 105B to investigate and submits its findings to the controller over MCP. In the controller, using Sarvam's translation models, the RCA is visible to the user in any of the supported languages. 
 2. **Limit the impact.** An operator reviews the findings and approves the fallback. Flagsmith moves only the affected city's customers to pickup.
 3. **Recover gradually.** Synthetic probes check when the courier is healthy enough to start recovery. The operator starts the rollout, and the controller uses Flagsmith to restore delivery in steps. In the delivery demo, healthy steps advance automatically from 5% to 100%. A guardrail breach rolls traffic back to pickup automatically.
 4. **Reach the operator.** If an actionable approval is overdue, FestReady can place a Sarvam Voice Agents call in the language configured on the playbook. The call gives the incident ID and directs the operator to the dashboard to review it.
