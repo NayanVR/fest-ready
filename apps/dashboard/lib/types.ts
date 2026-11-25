@@ -34,6 +34,7 @@ export type Playbook = {
   recovery: {
     method: "split" | "segments";
     steps: number[];
+    auto_advance?: boolean;
     guardrail: { min_samples: number; max_error_rate: number; max_consecutive_errors: number; window: string };
     cooldown_after_rollback: string;
   };

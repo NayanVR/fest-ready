@@ -1,6 +1,7 @@
-// Server-only helpers. ADMIN_SECRET is read here and in app/api/c only.
+// Server-only dashboard configuration.
 export const controllerUrl = () => process.env.CONTROLLER_URL || "http://localhost:4100";
 export const shopUrl = () => process.env.SHOP_URL || "http://localhost:4001";
+export const paymentDemoEnabled = () => process.env.PAYMENT_DEMO_ENABLED === "1";
 
 export type Loaded<T> = { data?: T; error?: string };
 

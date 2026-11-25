@@ -59,7 +59,7 @@ function Choose({ label, choices, onChoose }: { label: string; choices: string[]
   </label>;
 }
 
-function initialFields(p?: Playbook) {
+function initialFields(p?: Omit<Playbook, "version">) {
   return {
     id: p?.id ?? "", owner: p?.owner ?? "", description: p?.description ?? "",
     alerts: p?.match.alerts.join("\n") ?? "", cause: p?.match.cause ?? "external",
@@ -101,7 +101,7 @@ function flagState(enabled: string, text: string, label: string) {
   return { enabled: enabled === "true", value };
 }
 
-function draftPlaybook(f: Fields, identities: Record<string, string>): Omit<Playbook, "version"> {
+function draftPlaybook(f: Fields, identities: Record<string, string>, autoAdvance?: boolean): Omit<Playbook, "version"> {
   const filters = parseJson(f.filters, "Canary filter");
   if (filters !== undefined && (filters === null || typeof filters !== "object" || Array.isArray(filters)))
     throw new Error("Canary filter must be a JSON object.");
@@ -120,6 +120,7 @@ function draftPlaybook(f: Fields, identities: Record<string, string>): Omit<Play
     recovery: {
       method: "split",
       steps: f.steps.split(",").map(Number),
+      auto_advance: autoAdvance,
       guardrail: {
         min_samples: Number(f.samples), max_error_rate: Number(f.errorRate),
         max_consecutive_errors: Number(f.consecutive), window: f.window,
@@ -143,13 +144,15 @@ function draftPlaybook(f: Fields, identities: Record<string, string>): Omit<Play
   };
 }
 
-export default function PlaybookWizard({ playbook, onCancel, onSave }: {
+export default function PlaybookWizard({ playbook, draft, onCancel, onSave }: {
   playbook?: Playbook;
+  draft?: Omit<Playbook, "version">;
   onCancel: () => void;
   onSave: (saved: Playbook) => void;
 }) {
-  const [fields, setFields] = useState(() => initialFields(playbook));
-  const [identities, setIdentities] = useState(() => playbook?.probe.identities ?? {});
+  const initial = playbook ?? draft;
+  const [fields, setFields] = useState(() => initialFields(initial));
+  const [identities, setIdentities] = useState(() => initial?.probe.identities ?? {});
   const [stage, setStage] = useState(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<WizardError>();
@@ -207,7 +210,7 @@ export default function PlaybookWizard({ playbook, onCancel, onSave }: {
   function readDraft() {
     setError(undefined);
     try {
-      return draftPlaybook(fields, identities);
+      return draftPlaybook(fields, identities, initial?.recovery.auto_advance);
     } catch (error) {
       setError({ message: (error as Error).message });
     }
@@ -249,7 +252,7 @@ export default function PlaybookWizard({ playbook, onCancel, onSave }: {
   return (
     <section className="card playbook-wizard" aria-labelledby="wizard-title">
       <div className="cardhead">
-        <h2 id="wizard-title">{playbook ? "Edit playbook" : "Create playbook"}</h2>
+        <h2 id="wizard-title">{playbook ? "Edit playbook" : draft ? "New payment failover playbook" : "Create playbook"}</h2>
         {playbook && <span className="muted"><code>{playbook.id}</code> · v{playbook.version}</span>}
       </div>
       <ol className="wizard-steps" aria-label="Wizard steps">
@@ -263,7 +266,7 @@ export default function PlaybookWizard({ playbook, onCancel, onSave }: {
           {stage === 0 && <>
             {input("id", "Playbook ID", { pattern: "[a-z0-9\\-]+", title: "Lowercase letters, numbers and hyphens", readOnly: Boolean(playbook) })}
             {input("owner", "Owner")}
-            <div className="wizard-wide">{area("description", "Description for NuBi")}</div>
+            <div className="wizard-wide">{area("description", draft ? "Description" : "Description for NuBi")}</div>
             {area("alerts", "Alert names (one per line)")}
             {select("cause", "Cause", { external: "External", internal: "Internal" })}
           </>}
@@ -354,7 +357,7 @@ export default function PlaybookWizard({ playbook, onCancel, onSave }: {
             {input("cooldown", "Cooldown after rollback", { pattern: duration, placeholder: "60s" })}
           </>}
           {stage === 4 && <>
-            <p className="muted wizard-wide">The probe uses <code>POST {probeUrl}</code>.</p>
+            <p className="muted wizard-wide">The probe uses <code>{fields.requestMethod} {fields.url}</code>.</p>
             {input("every", "Probe interval", { pattern: duration, placeholder: "10s" })}
             {input("healthyFor", "Required healthy duration", { pattern: duration, placeholder: "60s" })}
             {values.map((value, i) => (
@@ -372,7 +375,7 @@ export default function PlaybookWizard({ playbook, onCancel, onSave }: {
             {input("healthyStatus", "Expected healthy status", { type: "number", min: 100, max: 599 })}
             {input("fallbackStatus", "Expected fallback status", { type: "number", min: 100, max: 599 })}
             <div className="wizard-lookup wizard-wide">
-              <p className="muted" id="test-probe-help">Send one synthetic shop order for the selected cohort. The draft stays unsaved.</p>
+              <p className="muted" id="test-probe-help">Send one synthetic request for the selected cohort. The draft stays unsaved.</p>
               <div className="row wizard-probe-row">
                 <label>Test cohort
                   <select value={selectedProbe} aria-describedby="test-probe-help" onChange={(event) => {

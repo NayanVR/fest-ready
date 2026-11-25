@@ -5,10 +5,10 @@ import type { Note } from "./ui";
 import type { Playbook, PlaybookRow } from "@/lib/types";
 import PlaybookWizard from "./PlaybookWizard";
 
-export default function Playbooks({ initial }: { initial: Loaded<PlaybookRow[]> }) {
+export default function Playbooks({ initial, template }: { initial: Loaded<PlaybookRow[]>; template?: Omit<Playbook, "version"> }) {
   const { data, error, reload } = usePoll<PlaybookRow[]>("playbooks", initial);
   const { busy, note, run } = useAction();
-  const [wizard, setWizard] = useState<{ playbook?: Playbook }>();
+  const [wizard, setWizard] = useState<{ playbook?: Playbook; draft?: Omit<Playbook, "version"> }>();
   const [opening, setOpening] = useState<string>();
   const [feedback, setFeedback] = useState<Note>(null);
   const opener = useRef<HTMLButtonElement>(null);
@@ -38,6 +38,11 @@ export default function Playbooks({ initial }: { initial: Loaded<PlaybookRow[]> 
       <div className="titlerow">
         <h1>Playbooks</h1>
         <span className="sp" />
+        {template && <button disabled={disabled} onClick={(event) => {
+          opener.current = event.currentTarget;
+          setFeedback(null);
+          setWizard({ draft: template });
+        }}>Use payment demo template</button>}
         <button className="primary" disabled={disabled} onClick={(event) => {
           opener.current = event.currentTarget;
           setFeedback(null);
@@ -48,7 +53,7 @@ export default function Playbooks({ initial }: { initial: Loaded<PlaybookRow[]> 
       <Banner error={error} />
       <Notice n={note} />
       <Notice n={feedback} />
-      {wizard && <PlaybookWizard playbook={wizard.playbook} onCancel={() => setWizard(undefined)} onSave={(saved) => {
+      {wizard && <PlaybookWizard {...wizard} onCancel={() => setWizard(undefined)} onSave={(saved) => {
         setWizard(undefined);
         setFeedback({ ok: true, text: `Saved ${saved.id} · v${saved.version}` });
         void reload();

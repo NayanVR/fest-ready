@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 const LINKS = [["/", "Overview"], ["/playbooks", "Playbooks"], ["/audit", "Audit log"]] as const;
 const TOOLS = [["/storefront", "Storefront"], ["/demo", "Demo controls"]] as const;
 
-export default function Nav({ user }: { user?: string }) {
+export default function Nav({ user, paymentDemo }: { user?: string; paymentDemo: boolean }) {
   const path = usePathname();
   const [open, setOpen] = useState(false);
   useEffect(() => setOpen(false), [path]);
@@ -28,9 +28,14 @@ export default function Nav({ user }: { user?: string }) {
       <div className={`body ${open ? "open" : ""}`} id="side-body">
         <nav aria-label="Main">{LINKS.map(item)}</nav>
         <div className="group">Demo</div>
-        <nav aria-label="Demo">{TOOLS.map(item)}</nav>
+        <nav aria-label="Demo">
+          {TOOLS.map(item)}
+          {paymentDemo && item(["/payments", "Payment simulation"])}
+        </nav>
         <div className="foot">
-          <div className="rule">fallback &amp; recovery start: operator · steps &amp; rollback: automatic</div>
+          <div className="rule">{paymentDemo
+            ? "Fallback and recovery start require an operator. Recovery steps follow the playbook. Rollback is automatic."
+            : "fallback & recovery start: operator · steps & rollback: automatic"}</div>
           <div className="who">
             <span>Signed in as <b>{user}</b></span>
             <button onClick={logout}>Log out</button>

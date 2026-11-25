@@ -131,6 +131,23 @@ textarea { height: auto; min-height: 72px; padding: 8px 10px; resize: vertical; 
 .wizard-result { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .wizard-actions { margin-top: 0; }
 .wizard-actions button:first-child { margin-right: auto; }
+
+.payment-providers {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--gap);
+  list-style: none; padding: 0; margin: 0;
+}
+.payment-providers li { display: grid; gap: 10px; justify-items: start; padding-top: 12px; border-top: 1px solid var(--rule); }
+.payment-providers strong { font-weight: 500; }
+.payment-providers + .notice { margin-top: 12px; }
+.payment-customer { display: flex; align-items: end; flex-wrap: wrap; gap: 8px; }
+.payment-customer label { flex: 1 1 160px; min-width: 0; }
+.payment-cards dd { overflow-wrap: anywhere; }
+.payment-incident-link { margin-top: 12px; }
+@media (max-width: 520px) {
+  .payment-providers { grid-template-columns: 1fr; }
+  .payment-providers li { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+  .payment-customer label { flex-basis: 100%; }
+}
 @media (max-width: 520px) {
   .wizard-steps { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 10px; }
   .wizard-fields { grid-template-columns: minmax(0, 1fr); }
