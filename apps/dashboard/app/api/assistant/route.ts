@@ -1,6 +1,7 @@
 // Playbook assistant (server only). Behind the login gate in proxy.ts. SARVAM_API_KEY and ADMIN_SECRET never leave the server.
 // It only drafts: discovery and the readiness dry-run are read-only, and nothing is ever saved from here.
 import { NextRequest } from "next/server";
+import type { PlaybookRow } from "@/lib/types";
 import { controllerUrl } from "@/lib/server";
 import { parseAnswer, systemPrompt, type Context, type Msg } from "@/lib/assistant";
 
@@ -25,7 +26,11 @@ async function context(): Promise<Context> {
     try { return await f(); } catch { unavailable.push(name); return empty; }
   };
   const [playbooks, flags, eventFields] = await Promise.all([
-    get("playbooks", async () => { const r = await controller("playbooks"); if (!r.ok) throw 0; return (r.json as Record<string, unknown>[]).map(({ approval_call, ...playbook }) => playbook); }, []),
+    get("playbooks", async () => {
+      const r = await controller("playbooks");
+      if (!r.ok) throw 0;
+      return (r.json as PlaybookRow[]).map(({ approval_call, ...playbook }) => playbook);
+    }, []),
     // Flag search needs a term; a few common characters cover typical snake/kebab-case keys.
     get("Flagsmith flags", async () => {
       const rs = await Promise.all(["_", "-", "e", "a"].map((search) => controller("playbook-wizard/flags", { search })));
