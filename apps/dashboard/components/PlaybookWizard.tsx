@@ -1,54 +1,62 @@
 "use client";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
-import type { ComponentProps, FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { ComponentProps, FormEvent, ReactNode } from "react";
 import type { Playbook, PlaybookRow } from "@/lib/types";
+import { playbookTemplates } from "@/lib/playbook-templates";
 import { Pill, post } from "./ui";
 
-const stages = ["Basics", "Scope", "Signals", "Recovery", "Probe", "Review"];
+const stages = [
+  { title: "What fails", lead: "Pick the alert that starts this playbook and describe it for the investigator." },
+  { title: "Who is affected", lead: "Choose how customers are grouped. Only the failing group is moved to the fallback." },
+  { title: "Safe fallback", lead: "Choose the flag that moves a group to the safe route, and its two states." },
+  { title: "Recovery and guardrails", lead: "How traffic returns, and when the controller rolls back on its own." },
+  { title: "Probe", lead: "A synthetic request tells the controller when the failing route is healthy again." },
+  { title: "Review", lead: "Check the dry run, then save. Nothing changes in Flagsmith until an incident is approved." },
+];
+type Draft = Omit<Playbook, "version">;
+type WizardError = { message: string; reasons?: string[] };
+type Readiness = Pick<PlaybookRow, "readiness" | "reasons">;
+type ProbeResult = { healthy: boolean; status: number | null; error: string | null };
+type Catalog = { flags: string[]; segments: string[]; alerts: string[]; metrics: string[]; labels: string[]; eventFields: string[]; unavailable: string[] };
+
 const jsonText = (value: unknown) => value === undefined ? "" : JSON.stringify(value, null, 2);
-const lines = (value: string) => value.split("\n").map((line) => line.trim()).filter(Boolean);
-const mergeLines = (value: string, additions: string[]) => [...new Set([...lines(value), ...additions])].join("\n");
-const duration = "[0-9]+(ms|s|m|h)";
+const lines = (value: string) => [...new Set(value.split(/[\n,]/).map((line) => line.trim()).filter(Boolean))];
+const durationRe = /^[0-9]+(ms|s|m|h)$/;
 const labelName = /^[A-Za-z_][A-Za-z0-9_]*$/;
-const metricName = /^[A-Za-z_:][A-Za-z0-9_:]*$/;
+const slug = (text: string) => text.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 const deliveryProbe = "${SHOP_URL}/api/orders";
 const paymentProbe = "${SHOP_URL}/api/payments";
 const probeTargets: Record<string, { label: string; body: object }> = {
   [deliveryProbe]: { label: "Shop orders", body: { customerId: "{probe_identity}", mode: "delivery", synthetic: true } },
   [paymentProbe]: { label: "Shop payments", body: { provider: "{value}", customerId: "{probe_identity}", amount: 1000, synthetic: true } },
 };
-type WizardError = { message: string; reasons?: string[] };
-type Readiness = Pick<PlaybookRow, "readiness" | "reasons">;
-type ProbeResult = { healthy: boolean; status: number | null; error: string | null };
-type Catalog = { flags: string[]; segments: string[]; alerts: string[]; metrics: string[]; labels: string[]; eventFields: string[]; unavailable: string[] };
-type Helper = "catalog" | "flags" | "label-values" | "readiness" | "probe";
+// Generic field-name guesses for the order event; every guess stays editable.
+const guessField = (fields: string[], patterns: RegExp[]) => {
+  for (const pattern of patterns) {
+    const hit = fields.find((name) => pattern.test(name));
+    if (hit) return hit;
+  }
+  return "";
+};
+const identityPatterns = [/^(customer|user|account|client|member|buyer)[-_]?id$/i, /^(customer|user|account|client)$/i];
+const outcomePatterns = [/^outcome$/i, /^(result|status)$/i];
+const amountPatterns = [/^amount$/i, /^(total|price|value)$/i];
 
-function useWizardRequest<T>(helper: Helper) {
+function useWizardRequest<T>(helper: string) {
   const [state, setState] = useState<{ pending?: boolean; data?: T; error?: WizardError }>({});
   const sequence = useRef(0);
-
-  const clear = useCallback(() => {
-    sequence.current++;
-    setState({});
-  }, []);
-
+  const clear = useCallback(() => { sequence.current++; setState({}); }, []);
   const run = useCallback(async (body: unknown) => {
     const request = ++sequence.current;
     setState({ pending: true });
     const result = await post(`playbook-wizard/${helper}`, body);
     if (request !== sequence.current) return;
-    if (result.ok && result.json) {
-      setState({ data: result.json });
-    } else {
-      setState({
-        error: {
-          message: result.json?.message ?? result.json?.error ?? `Controller returned HTTP ${result.status}.`,
-          reasons: Array.isArray(result.json?.reasons) ? result.json.reasons : undefined,
-        },
-      });
-    }
+    if (result.ok && result.json) setState({ data: result.json });
+    else setState({ error: {
+      message: result.json?.message ?? result.json?.error ?? `Controller returned HTTP ${result.status}.`,
+      reasons: Array.isArray(result.json?.reasons) ? result.json.reasons : undefined,
+    } });
   }, [helper]);
-
   return { ...state, clear, run };
 }
 
@@ -57,31 +65,6 @@ function WizardFeedback({ error }: { error?: WizardError }) {
     {error.message}
     {!!error.reasons?.length && <ul className="plain">{error.reasons.map((reason, i) => <li key={i}>{reason}</li>)}</ul>}
   </div>;
-}
-
-function Choose({ label, choices, onChoose, labels }: { label: string; choices: string[]; onChoose: (value: string) => void; labels?: Record<string, string> }) {
-  return <label>{label}
-    <select value="" onChange={(event) => onChoose(event.target.value)}>
-      <option value="" disabled>Choose a value</option>
-      {choices.map((value) => <option key={value} value={value}>{labels?.[value] ?? value}</option>)}
-    </select>
-  </label>;
-}
-
-function segmentGroups(segments: string[]) {
-  const names = new Set(segments);
-  const groups = new Map<string, string[]>();
-  for (const name of segments) {
-    const match = /^(.*-)?([^-]+)-fallback$/.exec(name);
-    if (!match) continue;
-    const [, prefix = "", value] = match;
-    if (!names.has(`${prefix}${value}-recovery`)) continue;
-    const key = `${prefix}{value}`;
-    const values = groups.get(key) ?? [];
-    values.push(value);
-    groups.set(key, values);
-  }
-  return groups;
 }
 
 function segmentTemplates(segments: string[], values: string[]) {
@@ -101,23 +84,23 @@ function segmentTemplates(segments: string[], values: string[]) {
   return [...templates];
 }
 
-function initialFields(p: Omit<Playbook, "version"> | undefined, defaultOwner: string | undefined, editing: boolean) {
+function initialFields(p: Draft | undefined, defaultOwner: string | undefined, editing: boolean) {
   const url = p?.probe.request.url ?? deliveryProbe;
   const configuredBody = p?.probe.request.body;
   const body = configuredBody === undefined && !editing ? probeTargets[url]?.body : configuredBody;
   return {
     id: p?.id ?? "", owner: p?.owner || defaultOwner || "", description: p?.description ?? "",
-    alerts: p?.match.alerts.join("\n") ?? "", cause: p?.match.cause ?? "external",
+    alerts: p?.match.alerts.join("\n") ?? "", cause: (p?.match.cause ?? "external") as string,
     dimension: p?.dimension.name ?? "", trait: p?.dimension.trait ?? "",
     label: p?.dimension.label ?? "", values: p?.dimension.values.join("\n") ?? "",
     flag: p?.flag.key ?? "", normal: String(p?.flag.normal.enabled ?? true),
     fallback: String(p?.flag.fallback.enabled ?? false),
     normalValue: jsonText(p?.flag.normal.value), fallbackValue: jsonText(p?.flag.fallback.value),
-    fallbackSegment: p?.segments.fallback ?? "", recoverySegment: p?.segments.recovery ?? "",
+    fallbackSegment: p?.segments.fallback ?? "{value}-fallback", recoverySegment: p?.segments.recovery ?? "{value}-recovery",
     dimensionField: p?.events.dimension_field ?? "", identityField: p?.events.identity_field ?? "",
     outcomeField: p?.events.outcome_field ?? "", amountField: p?.events.amount_field ?? "",
     filters: jsonText(p?.events.canary_filter), healthErrors: p?.health?.errors ?? "", healthTotal: p?.health?.total ?? "",
-    steps: p?.recovery.steps.join(", ") ?? "5, 10, 50, 100",
+    steps: p?.recovery.steps.join(", ") ?? "5, 10, 50, 100", autoAdvance: String(p?.recovery.auto_advance ?? true),
     samples: String(p?.recovery.guardrail.min_samples ?? 10), errorRate: String(p?.recovery.guardrail.max_error_rate ?? 0.05),
     consecutive: String(p?.recovery.guardrail.max_consecutive_errors ?? 3),
     window: p?.recovery.guardrail.window ?? "20s", cooldown: p?.recovery.cooldown_after_rollback ?? "60s",
@@ -127,16 +110,12 @@ function initialFields(p: Omit<Playbook, "version"> | undefined, defaultOwner: s
     fallbackStatus: String(p?.probe.expect.fallback_active.status ?? 409),
   };
 }
-
 type Fields = ReturnType<typeof initialFields>;
+type Key = keyof Fields;
 
 function parseJson(text: string, label: string): unknown {
   if (!text.trim()) return undefined;
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new Error(`${label} must contain valid JSON.`);
-  }
+  try { return JSON.parse(text); } catch { throw new Error(`${label} is not valid JSON.`); }
 }
 
 function flagState(enabled: string, text: string, label: string) {
@@ -146,14 +125,12 @@ function flagState(enabled: string, text: string, label: string) {
   return { enabled: enabled === "true", value };
 }
 
-function draftPlaybook(f: Fields, identities: Record<string, string>, autoAdvance?: boolean): Omit<Playbook, "version"> {
+function draftPlaybook(f: Fields, identities: Record<string, string>): Draft {
   const filters = parseJson(f.filters, "Canary filter");
   if (filters !== undefined && (filters === null || typeof filters !== "object" || Array.isArray(filters)))
     throw new Error("Canary filter must be a JSON object.");
-  if (Boolean(f.healthErrors.trim()) !== Boolean(f.healthTotal.trim()))
-    throw new Error("Enter both PromQL queries or clear both.");
   return {
-    id: f.id, owner: f.owner.trim(), description: f.description,
+    id: f.id.trim(), owner: f.owner.trim(), description: f.description.trim(),
     match: { alerts: lines(f.alerts), cause: f.cause === "internal" ? "internal" : "external" },
     dimension: { name: f.dimension.trim(), trait: f.trait.trim(), label: f.label.trim(), values: lines(f.values) },
     flag: {
@@ -164,13 +141,13 @@ function draftPlaybook(f: Fields, identities: Record<string, string>, autoAdvanc
     segments: { fallback: f.fallbackSegment.trim(), recovery: f.recoverySegment.trim() },
     recovery: {
       method: "split",
-      steps: f.steps.split(",").map(Number),
-      auto_advance: autoAdvance,
+      steps: f.steps.split(",").map((step) => Number(step.trim())),
+      auto_advance: f.autoAdvance === "true",
       guardrail: {
         min_samples: Number(f.samples), max_error_rate: Number(f.errorRate),
-        max_consecutive_errors: Number(f.consecutive), window: f.window,
+        max_consecutive_errors: Number(f.consecutive), window: f.window.trim(),
       },
-      cooldown_after_rollback: f.cooldown,
+      cooldown_after_rollback: f.cooldown.trim(),
     },
     events: {
       dimension_field: f.dimensionField.trim(), identity_field: f.identityField.trim(),
@@ -179,58 +156,193 @@ function draftPlaybook(f: Fields, identities: Record<string, string>, autoAdvanc
     },
     health: f.healthErrors.trim() ? { errors: f.healthErrors, total: f.healthTotal } : undefined,
     probe: {
-      every: f.every, healthy_for: f.healthyFor,
-      identities: Object.fromEntries(lines(f.values).map((value) => [
-        value, Object.hasOwn(identities, value) ? identities[value].trim() : "",
-      ])),
+      every: f.every.trim(), healthy_for: f.healthyFor.trim(),
+      identities: Object.fromEntries(lines(f.values).map((value) => [value, (identities[value] ?? "").trim()])),
       request: { method: f.requestMethod.trim(), url: f.url.trim(), body: parseJson(f.body, "Probe request body") },
       expect: { healthy: { status: Number(f.healthyStatus) }, fallback_active: { status: Number(f.fallbackStatus) } },
     },
   };
 }
 
-export default function PlaybookWizard({ playbook, draft, defaultOwner, paymentProbeEnabled, onCancel, onSave }: {
+// Plain-language problems for one step; Next stays blocked until the list is empty.
+function problems(stage: number, f: Fields, identities: Record<string, string>, takenIds: string[]): string[] {
+  const out: string[] = [];
+  const need = (value: string, text: string) => { if (!value.trim()) out.push(text); };
+  const values = lines(f.values);
+  const json = (text: string, label: string) => { try { parseJson(text, label); } catch (e) { out.push((e as Error).message); } };
+  if (stage === 0) {
+    if (!/^[a-z0-9-]+$/.test(f.id)) out.push("Playbook ID can use only lowercase letters, numbers and hyphens.");
+    if (takenIds.includes(f.id)) out.push(`A playbook called ${f.id} already exists. Choose another ID.`);
+    need(f.owner, "Add an owner.");
+    need(f.description, "Add a description so the investigator knows what this playbook is for.");
+    if (!lines(f.alerts).length) out.push("Add at least one alert.");
+  }
+  if (stage === 1) {
+    need(f.dimension, "Choose how customers are grouped.");
+    if (f.label && !labelName.test(f.label.trim())) out.push("The Prometheus label can use only letters, numbers and underscores.");
+    need(f.label, "Add the Prometheus label for the group.");
+    need(f.trait, "Add the Flagsmith trait for the group.");
+    need(f.dimensionField, "Add the order-event field that holds the group.");
+    if (!values.length) out.push("Add at least one value.");
+  }
+  if (stage === 2) {
+    need(f.flag, "Choose a flag.");
+    if (f.normal === f.fallback && f.normalValue.trim() === f.fallbackValue.trim()) out.push("The normal and fallback states must differ.");
+    for (const [name, text] of [["fallbackSegment", "Fallback"], ["recoverySegment", "Recovery"]] as const)
+      if (!f[name].includes("{value}")) out.push(`${text} segment pattern must contain {value}.`);
+    json(f.normalValue, "Normal flag value");
+    json(f.fallbackValue, "Fallback flag value");
+  }
+  if (stage === 3) {
+    const steps = f.steps.split(",").map((step) => Number(step.trim()));
+    if (steps.some((step) => !Number.isInteger(step))) out.push("Steps must be whole percentages separated by commas.");
+    else {
+      if (steps[0] > 10) out.push("The first step can be at most 10%.");
+      if (steps.at(-1) !== 100) out.push("The last step must be 100%.");
+      if (steps.some((step, i) => i > 0 && step <= steps[i - 1])) out.push("Each step must be larger than the one before.");
+    }
+    if (!(Number.isInteger(Number(f.samples)) && Number(f.samples) >= 10)) out.push("Minimum samples must be a whole number, 10 or more.");
+    if (!(Number(f.errorRate) > 0 && Number(f.errorRate) <= 0.2)) out.push("Maximum error rate must be above 0 and at most 0.2 (20%).");
+    if (!(Number.isInteger(Number(f.consecutive)) && Number(f.consecutive) >= 1)) out.push("Maximum consecutive errors must be 1 or more.");
+    if (!durationRe.test(f.window.trim())) out.push("Window must be a duration such as 20s or 1m.");
+    if (!durationRe.test(f.cooldown.trim())) out.push("Cooldown must be a duration such as 60s.");
+    need(f.identityField, "Add the order-event field that identifies the customer.");
+    need(f.outcomeField, "Add the order-event field that holds the outcome.");
+    json(f.filters, "Canary filter");
+    if (Boolean(f.healthErrors.trim()) !== Boolean(f.healthTotal.trim())) out.push("Fill both PromQL queries or clear both.");
+  }
+  if (stage === 4) {
+    if (!durationRe.test(f.every.trim())) out.push("Probe interval must be a duration such as 10s.");
+    if (!durationRe.test(f.healthyFor.trim())) out.push("Healthy duration must be a duration such as 60s.");
+    const missing = values.filter((value) => !identities[value]?.trim());
+    if (missing.length) out.push(`Add a synthetic identity for ${missing.join(", ")}.`);
+    for (const [name, text] of [["healthyStatus", "Healthy"], ["fallbackStatus", "Fallback"]] as const) {
+      const status = Number(f[name]);
+      if (!(Number.isInteger(status) && status >= 100 && status <= 599)) out.push(`${text} status must be an HTTP status between 100 and 599.`);
+    }
+    json(f.body, "Probe request body");
+  }
+  return out;
+}
+
+const Hint = ({ from }: { from?: string }) => from ? <span className="wz-auto">Auto-filled from {from}</span> : null;
+
+export default function PlaybookWizard({ playbook, existing = [], defaultOwner, paymentProbeEnabled, onCancel, onSave }: {
   playbook?: Playbook;
-  draft?: Omit<Playbook, "version">;
+  existing?: PlaybookRow[];
   defaultOwner?: string;
   paymentProbeEnabled?: boolean;
   onCancel: () => void;
   onSave: (saved: Playbook) => void;
 }) {
-  const initial = playbook ?? draft;
-  const [fields, setFields] = useState(() => initialFields(initial, defaultOwner, Boolean(playbook)));
-  const [identities, setIdentities] = useState(() => initial?.probe.identities ?? {});
+  const editing = Boolean(playbook);
+  const [template, setTemplate] = useState(0);
+  const [fields, setFields] = useState(() => initialFields(playbook ?? playbookTemplates[0].draft, defaultOwner, editing));
+  const [identities, setIdentities] = useState<Record<string, string>>(() => playbook?.probe.identities ?? {});
+  // Which fields hold a value the wizard chose, and where it came from. Editing a field removes its hint.
+  const [auto, setAuto] = useState<Partial<Record<Key | `id:${string}`, string>>>(() => editing ? {} : {
+    owner: "your sign-in", description: "template", normal: "template", fallback: "template",
+    fallbackSegment: "platform default", recoverySegment: "platform default", steps: "platform defaults",
+    samples: "platform defaults", errorRate: "platform defaults", consecutive: "platform defaults", window: "platform defaults",
+    cooldown: "platform defaults", autoAdvance: "platform defaults", every: "platform defaults", healthyFor: "platform defaults",
+    url: "template", body: "template", healthyStatus: "template", fallbackStatus: "template",
+  });
   const [stage, setStage] = useState(0);
+  const [tried, setTried] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<WizardError>();
-  const [search, setSearch] = useState("");
-  const [metric, setMetric] = useState("");
-  const [queryMetric, setQueryMetric] = useState<string>();
+  const [newValue, setNewValue] = useState("");
   const [probeValue, setProbeValue] = useState("");
-  const listId = useId();
+  const [wide, setWide] = useState(true);
   const heading = useRef<HTMLHeadingElement>(null);
+  const discovered = useRef(false);
   const review = stage === stages.length - 1;
-  const flags = useWizardRequest<{ flags: string[] }>("flags");
   const labelValues = useWizardRequest<{ values: string[] }>("label-values");
   const catalog = useWizardRequest<Catalog>("catalog");
   const readiness = useWizardRequest<Readiness>("readiness");
   const probe = useWizardRequest<ProbeResult>("probe");
   const { run: loadCatalog } = catalog;
-  const { run: loadValues, clear: clearValues } = labelValues;
-  const selectedLabel = fields.label.trim();
-  const selectedMetric = metric.trim();
+  const { run: loadValues } = labelValues;
+  const values = lines(fields.values);
+  const takenIds = existing.map((p) => p.id).filter((id) => id !== playbook?.id);
+  const stageProblems = problems(stage, fields, identities, takenIds);
 
-  useEffect(() => { heading.current?.focus(); }, [stage]);
+  useEffect(() => { setWide(window.matchMedia("(min-width: 1100px)").matches); }, []);
+  useEffect(() => { if (stage) heading.current?.focus(); }, [stage]);
   useEffect(() => { void loadCatalog({}); }, [loadCatalog]);
   useEffect(() => {
-    clearValues();
-    if (stage !== 1 || selectedLabel.length > 128 || !labelName.test(selectedLabel)) return;
-    if (selectedMetric && (selectedMetric.length > 128 || !metricName.test(selectedMetric))) return;
-    const timer = setTimeout(() => {
-      void loadValues({ label: selectedLabel, ...(selectedMetric ? { metric: selectedMetric } : {}) });
-    }, 300);
+    const label = fields.label.trim();
+    if (!labelName.test(label)) return;
+    const timer = setTimeout(() => void loadValues({ label }), 300);
     return () => clearTimeout(timer);
-  }, [stage, selectedLabel, selectedMetric, clearValues, loadValues]);
+  }, [fields.label, loadValues]);
+
+  // Fill only the fields that are still empty (or still hold an earlier auto-fill), and record the source.
+  const fill = useCallback((patch: Partial<Fields>, source: string, force = false) => {
+    const keys = (Object.keys(patch) as Key[]).filter((key) => patch[key] && (force || !fields[key].trim() || auto[key]));
+    if (!keys.length) return;
+    setFields((current) => ({ ...current, ...Object.fromEntries(keys.map((key) => [key, patch[key]])) }));
+    setAuto((current) => ({ ...current, ...Object.fromEntries(keys.map((key) => [key, source])) }));
+  }, [auto, fields]);
+
+  // First pass over live data for a new playbook: alert, ID, grouping, values and event fields.
+  const data = catalog.data;
+  useEffect(() => {
+    if (!data || editing || discovered.current) return;
+    discovered.current = true;
+    const used = new Set(existing.flatMap((p) => p.match.alerts));
+    const alert = data.alerts.find((name) => !used.has(name)) ?? data.alerts[0];
+    let id = alert ? slug(alert) : "";
+    for (let n = 2; id && takenIds.includes(id); n++) id = `${slug(alert!)}-${n}`;
+    if (alert) fill({ alerts: alert, id }, "Prometheus alert rules");
+    const fieldsSeen = data.eventFields;
+    const ev = { identityField: guessField(fieldsSeen, identityPatterns), outcomeField: guessField(fieldsSeen, outcomePatterns), amountField: guessField(fieldsSeen, amountPatterns) };
+    fill(ev, "recent order events");
+    void (async () => {
+      // A grouping is likely when its label values match the names of existing Flagsmith segments.
+      let best = { name: "", score: 0, values: [] as string[] };
+      for (const name of dimensionCandidates(data).slice(0, 8)) {
+        const result = await post("playbook-wizard/label-values", { label: name });
+        const found: string[] = result.ok ? result.json?.values ?? [] : [];
+        const score = found.filter((value) => segmentTemplates(data.segments, [value]).length).length;
+        if (score > best.score) best = { name, score, values: found };
+      }
+      if (best.name) chooseDimension(best.name, "labels that match Flagsmith segments");
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
+
+  // When the label's values load, add them all if the user has not typed their own.
+  useEffect(() => {
+    const found = labelValues.data?.values;
+    if (!found?.length || editing) return;
+    if (!fields.values.trim() || auto.values) {
+      fill({ values: found.join("\n") }, `recent Prometheus values of ${fields.label}`, true);
+      const reused: Record<string, string> = {};
+      for (const value of found) {
+        const owner = existing.find((p) => p.probe?.identities?.[value]);
+        if (owner && !identities[value]) reused[value] = owner.probe.identities[value];
+      }
+      if (Object.keys(reused).length) {
+        setIdentities((current) => ({ ...reused, ...current }));
+        setAuto((current) => ({ ...current, ...Object.fromEntries(Object.keys(reused).map((value) => [`id:${value}`, "an existing playbook"])) }));
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [labelValues.data]);
+
+  function dimensionCandidates(c: Catalog | undefined) {
+    if (!c) return [];
+    const skip = new Set([fields.identityField, fields.outcomeField, fields.amountField].filter(Boolean));
+    return c.eventFields.filter((name) => c.labels.includes(name) && !skip.has(name) &&
+      !identityPatterns.some((p) => p.test(name)) && !outcomePatterns.some((p) => p.test(name)) && !amountPatterns.some((p) => p.test(name)));
+  }
+
+  function chooseDimension(name: string, source: string) {
+    draftChanged();
+    if (auto.values) setFields((current) => ({ ...current, values: "" }));
+    fill({ dimension: name, trait: name, label: name, dimensionField: name }, source, true);
+  }
 
   function draftChanged() {
     setError(undefined);
@@ -238,44 +350,42 @@ export default function PlaybookWizard({ playbook, draft, defaultOwner, paymentP
     probe.clear();
   }
 
-  function changeField(name: keyof Fields, value: string) {
+  function changeField(name: Key, value: string) {
     draftChanged();
-    if (name === "label") clearValues();
+    setAuto((current) => { const next = { ...current }; delete next[name]; return next; });
     setFields((draft) => ({ ...draft, [name]: value }));
   }
 
-  function bind(name: keyof Fields) {
-    return {
-      value: fields[name],
-      onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-        changeField(name, event.target.value);
-      },
-    };
+  function field(name: Key, label: string, opts: { help?: ReactNode; options?: string[]; props?: ComponentProps<"input">; area?: boolean } = {}) {
+    const id = `wz-${name}`;
+    const listId = opts.options?.length ? `${id}-list` : undefined;
+    const common = { id, value: fields[name], "aria-describedby": opts.help ? `${id}-help` : undefined,
+      onChange: (event: { target: { value: string } }) => changeField(name, event.target.value) };
+    return <div className="wz-field">
+      <label htmlFor={id}>{label}</label>
+      {opts.area ? <textarea rows={3} {...common} /> : <input autoComplete="off" list={listId} {...common} {...opts.props} />}
+      {listId && <datalist id={listId}>{opts.options!.map((value) => <option key={value} value={value} />)}</datalist>}
+      {(opts.help || auto[name]) && <p className="wz-help" id={`${id}-help`}>{opts.help} <Hint from={auto[name]} /></p>}
+    </div>;
   }
 
-  function input(name: keyof Fields, label: string, props: ComponentProps<"input"> = {}, options: string[] = []) {
-    const id = `${listId}-${name}`;
-    return <label>{label}
-      <input required list={options.length ? id : undefined} placeholder={options.length ? "Choose or type" : undefined} {...bind(name)} {...props} />
-      {options.length > 0 && <datalist id={id}>{options.map((value) => <option key={value} value={value} />)}</datalist>}
-    </label>;
+  function choice(name: Key, label: string, options: Record<string, string>) {
+    return <div className="wz-field">
+      <label htmlFor={`wz-${name}`}>{label}</label>
+      <select id={`wz-${name}`} value={fields[name]} onChange={(event) => changeField(name, event.target.value)}>
+        {Object.entries(options).map(([value, text]) => <option value={value} key={value}>{text}</option>)}
+      </select>
+      {auto[name] && <p className="wz-help"><Hint from={auto[name]} /></p>}
+    </div>;
   }
 
-  function area(name: keyof Fields, label: string, props: ComponentProps<"textarea"> = {}) {
-    return <label>{label}<textarea required rows={3} {...bind(name)} {...props} /></label>;
+  function chooseTemplate(index: number) {
+    setTemplate(index);
+    const t = playbookTemplates[index].draft;
+    fill({ normal: String(t.flag.normal.enabled), fallback: String(t.flag.fallback.enabled), description: t.description }, "template");
   }
 
-  function select(name: keyof Fields, label: string, options: Record<string, string>) {
-    return (
-      <label>{label}
-        <select {...bind(name)}>
-          {Object.entries(options).map(([value, text]) => <option value={value} key={value}>{text}</option>)}
-        </select>
-      </label>
-    );
-  }
-
-  function useProbeTarget(url: string) {
+  function pickProbeTarget(url: string) {
     const target = probeTargets[url];
     if (!target) return;
     draftChanged();
@@ -288,306 +398,276 @@ export default function PlaybookWizard({ playbook, draft, defaultOwner, paymentP
 
   function readDraft() {
     setError(undefined);
-    try {
-      return draftPlaybook(fields, identities, initial?.recovery.auto_advance);
-    } catch (error) {
-      setError({ message: (error as Error).message });
+    try { return draftPlaybook(fields, identities); } catch (e) { setError({ message: (e as Error).message }); }
+  }
+
+  function go(next: number) {
+    setError(undefined);
+    setTried(false);
+    setStage(next);
+    if (next === stages.length - 1) {
+      try { void readiness.run(draftPlaybook(fields, identities)); } catch { /* shown on review */ }
     }
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (saving || probe.pending || readiness.pending) return;
-    setError(undefined);
+    if (saving || probe.pending) return;
     if (!review) {
-      setStage(stage + 1);
+      if (stageProblems.length) { setTried(true); return; }
+      go(stage + 1);
       return;
     }
-
     const draft = readDraft();
     if (!draft) return;
     setSaving(true);
-    const result = await post(
-      playbook ? `playbooks/${encodeURIComponent(playbook.id)}` : "playbooks",
-      draft,
-      playbook ? "PUT" : "POST",
-    );
+    const result = await post(playbook ? `playbooks/${encodeURIComponent(playbook.id)}` : "playbooks", draft, playbook ? "PUT" : "POST");
     setSaving(false);
-    if (result.ok && result.json?.id === draft.id && Number.isInteger(result.json?.version)) {
-      onSave(result.json);
-    } else {
-      setError({
-        message: result.json?.message ?? result.json?.error ??
-          (result.ok ? "The controller did not return a saved version. Check the playbook list before retrying." : `Save failed (HTTP ${result.status}).`),
-        reasons: Array.isArray(result.json?.reasons) ? result.json.reasons : undefined,
-      });
-    }
+    if (result.ok && result.json?.id === draft.id && Number.isInteger(result.json?.version)) onSave(result.json);
+    else setError({
+      message: result.json?.message ?? result.json?.error ??
+        (result.ok ? "The controller did not return a saved version. Check the playbook list before retrying." : `Save failed (HTTP ${result.status}).`),
+      reasons: Array.isArray(result.json?.reasons) ? result.json.reasons : undefined,
+    });
   }
 
-  const values = [...new Set(lines(fields.values))];
-  const availableValues = labelValues.data?.values.filter((value) => !values.includes(value)) ?? [];
-  const selectedProbe = values.includes(probeValue) ? probeValue : "";
-  const observed = catalog.data?.eventFields ?? [];
-  const alerts = catalog.data?.alerts.filter((alert) => !lines(fields.alerts).includes(alert)) ?? [];
-  const flagKeys = [...new Set([...(catalog.data?.flags ?? []), ...(flags.data?.flags ?? [])])].sort();
-  const segments = catalog.data?.segments ?? [];
-  const groups = segmentGroups(segments);
-  const groupChoices = [...groups.keys()].filter((key) => {
-    const groupValues = groups.get(key)!;
-    return values.every((value) => groupValues.includes(value)) &&
-      (!fields.fallbackSegment.trim() || fields.fallbackSegment === `${key}-fallback`) &&
-      (!fields.recoverySegment.trim() || fields.recoverySegment === `${key}-recovery`) &&
-      (!fields.fallbackSegment || !fields.recoverySegment || groupValues.some((value) => !values.includes(value)));
-  });
+  let preview = "";
+  let previewError = "";
+  try { preview = JSON.stringify(draftPlaybook(fields, identities), null, 2).replace(/\[\s+([^[\]{}]*?)\s+\]/g, (_, items: string) => `[${items.split(/,\s+/).join(", ")}]`); } catch (e) { previewError = (e as Error).message; }
+  const blockedAt = stages.findIndex((_, i) => i < stages.length - 1 && problems(i, fields, identities, takenIds).length);
+  const segments = data?.segments ?? [];
   const templates = segmentTemplates(segments, values);
-  const unavailable = catalog.data?.unavailable.filter((source) => {
-    const name = source.toLowerCase();
-    if (stage === 0) return name.includes("alert");
-    if (stage === 2) return name.includes("metric") || name.includes("event");
-    return !name.includes("alert");
-  }) ?? [];
-  const catalogProblem = catalog.error ? "Discovery is unavailable. Enter values manually." :
-    unavailable.length ? `Could not load ${unavailable.join(", ")}. Enter missing values manually.` : "";
-  const selectedQueryMetric = (queryMetric ?? metric).trim();
-  const metricSelector = metricName.test(selectedQueryMetric)
-    ? `${selectedQueryMetric}${labelName.test(selectedLabel) ? `{${selectedLabel}="{value}"}` : ""}`
-    : "";
+  const candidates = dimensionCandidates(data);
+  const discoveredValues = (labelValues.data?.values ?? []).filter((value) => !values.includes(value));
+  const unavailable = data?.unavailable ?? [];
+  const selectedProbe = values.includes(probeValue) ? probeValue : values[0] ?? "";
+  const steps = fields.steps.split(",").map((s) => s.trim()).filter(Boolean);
 
-  function metricInput(label: string, forQuery = false) {
-    const metrics = catalog.data?.metrics ?? [];
-    return <label>{label}
-      <input list={metrics.length ? `${listId}-metrics` : undefined}
-        placeholder={metrics.length ? "Choose or type" : undefined} value={forQuery ? queryMetric ?? metric : metric}
-        autoComplete="off" onChange={(event) => {
-          if (forQuery) {
-            setQueryMetric(event.target.value);
-            return;
-          }
-          clearValues();
-          setMetric(event.target.value);
-        }} />
-      {metrics.length > 0 && <datalist id={`${listId}-metrics`}>{metrics.map((name) => <option key={name} value={name} />)}</datalist>}
-    </label>;
-  }
   return (
     <section className="card playbook-wizard" aria-labelledby="wizard-title">
       <div className="cardhead">
-        <h2 id="wizard-title">{playbook ? "Edit playbook" : "Create playbook"}</h2>
-        {playbook && <span className="muted"><code>{playbook.id}</code> · v{playbook.version}</span>}
+        <h2 id="wizard-title">{playbook ? `Edit ${playbook.id}` : "New playbook"}</h2>
+        {playbook && <span className="muted">v{playbook.version} · saving makes v{playbook.version + 1}</span>}
+        <span className="sp" />
+        <span className="muted" role="status">
+          {catalog.pending ? "Reading live data…" : catalog.error ? "Live data unavailable, enter values by hand" :
+            unavailable.length ? `Could not read ${unavailable.join(", ")}` : data ? "Suggestions from live Flagsmith, Prometheus and order events" : ""}
+        </span>
+        {catalog.error && <button type="button" onClick={() => void catalog.run({})}>Retry</button>}
       </div>
-      <ol className="wizard-steps" aria-label="Wizard steps">
-        {stages.map((name, i) => (
-          <li key={name} className={`step ${i === stage ? "now" : i < stage ? "done" : ""}`} aria-current={i === stage ? "step" : undefined}>{name}</li>
-        ))}
+      <ol className="wz-progress" aria-label="Steps">
+        {stages.map(({ title }, i) => {
+          const reachable = i < stage || (i > stage && (blockedAt < 0 || i <= blockedAt));
+          return <li key={title} className={i === stage ? "now" : i < stage ? "done" : ""} aria-current={i === stage ? "step" : undefined}>
+            <button type="button" className="link" disabled={!reachable || i === stage} onClick={() => go(i)}>{title}</button>
+          </li>;
+        })}
       </ol>
-      <form className="form" onSubmit={submit}>
-        <h3 ref={heading} tabIndex={-1}>{stages[stage]}</h3>
-        {stage <= 2 && (catalog.pending || catalogProblem) && <div className="wizard-discovery" role="status">
-          <span>{catalog.pending ? "Loading suggestions…" : catalogProblem}</span>
-          {catalog.error && <button type="button" onClick={() => void catalog.run({})}>Retry discovery</button>}
-        </div>}
-        <div className="wizard-fields" key={stage}>
-          {stage === 0 && <>
-            {input("id", "Playbook ID", { pattern: "[a-z0-9\\-]+", title: "Lowercase letters, numbers and hyphens", readOnly: Boolean(playbook) })}
-            {input("owner", "Owner")}
-            <div className="wizard-wide">{area("description", "Description")}</div>
-            <div className="wizard-source">
-              {alerts.length > 0 && <Choose label="Add an existing alert" choices={alerts} onChoose={(alert) => {
-                draftChanged();
-                const slug = alert.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-                setFields((current) => ({ ...current, id: current.id || slug, alerts: mergeLines(current.alerts, [alert]) }));
-              }} />}
-              {area("alerts", "Alert names (one per line)")}
-            </div>
-            {select("cause", "Cause", { external: "External", internal: "Internal" })}
-          </>}
-          {stage === 1 && <>
-            <div className="wizard-source">
-              {input("flag", "Flagsmith flag key", { autoComplete: "off" }, flagKeys)}
-              <details className="wizard-options">
-                <summary>Search more flags</summary>
-                <label>Flag search term
-                  <input value={search} onChange={(event) => {
-                    setSearch(event.target.value);
-                    flags.clear();
-                  }} onKeyDown={(event) => {
-                    if (event.key !== "Enter") return;
-                    event.preventDefault();
-                    if (search.trim() && !flags.pending) void flags.run({ search: search.trim() });
+      <div className="wz-layout">
+        <form className="wz-form" onSubmit={submit} noValidate>
+          <div className="wz-stagehead">
+            <h3 ref={heading} tabIndex={-1}>{stages[stage].title}</h3>
+            <p className="muted">{stages[stage].lead}</p>
+          </div>
+
+          {stage === 0 && <div className="wz-grid">
+            {!editing && <fieldset className="wz-wide wz-options">
+              <legend>Start from</legend>
+              {playbookTemplates.map((t, i) => <label key={t.title} className={`wz-option ${template === i ? "on" : ""}`}>
+                <input type="radio" name="template" checked={template === i} onChange={() => chooseTemplate(i)} />
+                <span><strong>{t.title}</strong><span className="muted">{t.description}</span></span>
+              </label>)}
+            </fieldset>}
+            <div className="wz-wide">{field("alerts", "Alert that starts it", {
+              options: data?.alerts, area: lines(fields.alerts).length > 1,
+              help: "One alert, or several separated by commas.",
+            })}</div>
+            {field("id", "Playbook ID", { props: { readOnly: editing }, help: "Lowercase letters, numbers and hyphens." })}
+            {field("owner", "Owner")}
+            <div className="wz-wide">{field("description", "Description for the investigator", { area: true, help: "NuBi reads this when it proposes the playbook. Say what the fallback does, not what the cause is." })}</div>
+            {choice("cause", "Cause it handles", { external: "External (a partner or provider)", internal: "Internal (our own service)" })}
+          </div>}
+
+          {stage === 1 && <div className="wz-grid">
+            {candidates.length > 0 && <fieldset className="wz-wide wz-options wz-chips">
+              <legend>Group customers by</legend>
+              {candidates.map((name) => <label key={name} className={`wz-chip ${fields.dimension === name ? "on" : ""}`}>
+                <input type="radio" name="dimension" checked={fields.dimension === name} onChange={() => chooseDimension(name, "your choice")} />{name}
+              </label>)}
+              <p className="wz-help wz-wide">Fields seen both in recent order events and in Prometheus labels. <Hint from={auto.dimension} /></p>
+            </fieldset>}
+            <div className="wz-wide wz-field">
+              <span className="wz-label" id="wz-values-label">Values</span>
+              <div className="wz-values" aria-labelledby="wz-values-label">
+                {values.map((value) => {
+                  const covered = !segments.length || segmentTemplates(segments, [value]).length > 0;
+                  return <span key={value} className="wz-value">{value}{!covered && <span className="wz-warn"> no segment yet</span>}
+                    <button type="button" className="link" aria-label={`Remove ${value}`} onClick={() => changeField("values", values.filter((v) => v !== value).join("\n"))}>Remove</button>
+                  </span>;
+                })}
+                <input aria-label="Add a value" placeholder="Add a value" value={newValue} onChange={(e) => setNewValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key !== "Enter" || !newValue.trim()) return;
+                    e.preventDefault();
+                    changeField("values", [...values, ...lines(newValue)].join("\n"));
+                    setNewValue("");
                   }} />
-                </label>
-                <button type="button" disabled={flags.pending || !search.trim()}
-                  onClick={() => void flags.run({ search: search.trim() })}>
-                  {flags.pending ? "Searching…" : "Search Flagsmith flags"}
-                </button>
-                <WizardFeedback error={flags.error} />
-                {flags.data && (flags.data.flags.length ? <Choose
-                  label="Select Flagsmith flag" choices={flags.data.flags} onChoose={(value) => changeField("flag", value)}
-                /> : <p className="muted" role="status">No matching flags. Enter a key above or try another search.</p>)}
-              </details>
+              </div>
+              <p className="wz-help">
+                {labelValues.pending ? "Reading recent values…" : discoveredValues.length ? <>Also seen recently: {discoveredValues.map((value) =>
+                  <button key={value} type="button" className="link wz-add" onClick={() => changeField("values", [...values, value].join("\n"))}>{value}</button>)}</> :
+                  "Press Enter to add a value."} <Hint from={auto.values} />
+              </p>
             </div>
-            {metricInput("Narrow label values by metric (optional)")}
-            <div className="wizard-source">
-              {input("label", "Prometheus label", { autoComplete: "off" }, catalog.data?.labels ?? [])}
-              {!!selectedLabel && (!fields.dimension || !fields.trait) && <button type="button" onClick={() => {
-                draftChanged();
-                setFields((current) => ({
-                  ...current, dimension: current.dimension || selectedLabel, trait: current.trait || selectedLabel,
-                  dimensionField: current.dimensionField || (observed.includes(selectedLabel) ? selectedLabel : ""),
-                }));
-              }}>Use label for scope</button>}
-            </div>
-            <div className="wizard-source">
-              {input("dimension", "Dimension name", {}, observed)}
-              {input("trait", "Flagsmith trait", {}, [...new Set([fields.dimension, selectedLabel].filter(Boolean))])}
-            </div>
-            <div className="wizard-source wizard-wide">
-              {groupChoices.length > 0 && <Choose label="Use an existing segment group" choices={groupChoices}
-                labels={Object.fromEntries(groupChoices.map((key) => [key, `${key} · ${groups.get(key)!.join(", ")}`]))}
-                onChoose={(key) => {
-                  draftChanged();
-                  setFields((current) => ({
-                    ...current, values: mergeLines(current.values, groups.get(key)!),
-                    fallbackSegment: current.fallbackSegment || `${key}-fallback`, recoverySegment: current.recoverySegment || `${key}-recovery`,
-                  }));
-                }} />}
-              {area("values", "Dimension values (one per line)", { rows: 2 })}
-              {labelValues.pending && <p className="muted" role="status">Looking up label values…</p>}
-              {labelValues.error && <p className="muted" role="status">Could not load label values. Add dimension values above.</p>}
-              {labelValues.data && (availableValues.length > 0 ? <div className="row wizard-probe-row">
-                <Choose label="Add Prometheus label value" choices={availableValues}
-                  onChoose={(value) => changeField("values", mergeLines(fields.values, [value]))} />
-                <button type="button" onClick={() => changeField("values", mergeLines(fields.values, availableValues))}>Add all label values</button>
-              </div> : <p className="muted" role="status">
-                {labelValues.data.values.length ? "All discovered values are included." : "No recent values for this label."}
-              </p>)}
-            </div>
-            {input("fallbackSegment", "Fallback segment template", { placeholder: "{value}-fallback" }, templates.filter((name) => name.endsWith("-fallback")))}
-            {input("recoverySegment", "Recovery segment template", { placeholder: "{value}-recovery" }, templates.filter((name) => name.endsWith("-recovery")))}
-            {select("normal", "Normal flag state", { true: "Enabled", false: "Disabled" })}
-            {input("normalValue", "Normal flag value (optional JSON)", { required: false, placeholder: '"primary"' })}
-            {select("fallback", "Fallback flag state", { true: "Enabled", false: "Disabled" })}
-            {input("fallbackValue", "Fallback flag value (optional JSON)", { required: false, placeholder: '"secondary"' })}
-          </>}
-          {stage === 2 && <>
-            {catalog.data && !observed.length && <p className="muted wizard-wide">No recent event fields found. Enter the field names your service sends.</p>}
-            {([
-              ["dimensionField", "Dimension event field"],
-              ["identityField", "Identity event field"],
-              ["outcomeField", "Outcome event field"],
-              ["amountField", "Amount event field (optional)"],
-            ] as const).map(([name, label]) => (
-              <div className="wizard-source" key={name}>{input(name, label, { required: name !== "amountField", autoComplete: "off" }, observed)}</div>
-            ))}
-            <div className="wizard-wide">{area("filters", "Canary filter (optional JSON object)", { required: false })}</div>
-            <div className="wizard-source wizard-wide">
-              {metricInput("Prometheus metric for queries (optional)", true)}
-              {metricSelector && <div className="row">
-                <button type="button" disabled={!!fields.healthErrors.trim()} onClick={() => changeField("healthErrors", metricSelector)}>Start errors query</button>
-                <button type="button" disabled={!!fields.healthTotal.trim()} onClick={() => changeField("healthTotal", metricSelector)}>Start total query</button>
-              </div>}
-              <p className="muted">Metric selectors are a starting point for PromQL. The recovery guardrail uses events.</p>
-            </div>
-            {area("healthErrors", "PromQL errors query (optional)", { required: Boolean(fields.healthTotal.trim()) })}
-            {area("healthTotal", "PromQL total query (optional)", { required: Boolean(fields.healthErrors.trim()) })}
-          </>}
-          {stage === 3 && <>
-            {playbook?.recovery.method === "segments" && <p className="banner wizard-wide">
-              This playbook uses pre-made segments. Saving it changes recovery to percentage split.
-            </p>}
-            <div className="wizard-wide">{input("steps", "Step percentages (comma-separated)", { placeholder: "5, 10, 50, 100" })}</div>
-            <p className="muted wizard-wide">Percentage split starts at 10% or less, increases at each step, and finishes at 100%.</p>
-            {input("samples", "Minimum samples", { type: "number", min: 10 })}
-            {input("errorRate", "Maximum error rate (fraction)", { type: "number", min: 0, max: 0.2, step: "any" })}
-            {input("consecutive", "Maximum consecutive errors", { type: "number", min: 1 })}
-            {input("window", "Guardrail window", { pattern: duration, placeholder: "20s" })}
-            {input("cooldown", "Cooldown after rollback", { pattern: duration, placeholder: "60s" })}
-          </>}
-          {stage === 4 && <>
-            <label>Probe endpoint
-              <select required value={fields.requestMethod === "POST" ? fields.url : ""} onChange={(event) => useProbeTarget(event.target.value)}>
-                {fields.requestMethod !== "POST" && <option value="" disabled>Choose a POST endpoint</option>}
+            <details className="wz-wide wz-more" open={!(fields.label && fields.trait && fields.dimension && fields.dimensionField)}>
+              <summary>Where {fields.dimension || "the group"} lives: Prometheus label <code>{fields.label || "?"}</code>, Flagsmith trait <code>{fields.trait || "?"}</code>, event field <code>{fields.dimensionField || "?"}</code></summary>
+              <div className="wz-grid">
+                {field("label", "Prometheus label", { options: data?.labels })}
+                {field("trait", "Flagsmith trait")}
+                {field("dimension", "Name shown to operators")}
+                {field("dimensionField", "Order-event field", { options: data?.eventFields })}
+              </div>
+            </details>
+          </div>}
+
+          {stage === 2 && <div className="wz-grid">
+            {(data?.flags.length ?? 0) > 0 && (data!.flags.length <= 12) && <fieldset className="wz-wide wz-options wz-chips">
+              <legend>Flag</legend>
+              {data!.flags.map((key) => <label key={key} className={`wz-chip ${fields.flag === key ? "on" : ""}`}>
+                <input type="radio" name="flag" checked={fields.flag === key} onChange={() => changeField("flag", key)} />{key}
+              </label>)}
+              <p className="wz-help wz-wide">Flags in your Flagsmith project.</p>
+            </fieldset>}
+            <div className="wz-wide">{field("flag", data?.flags.length ? "Or type a flag key" : "Flag key", { options: data?.flags })}</div>
+            {choice("normal", "Normal state", { true: "On", false: "Off" })}
+            {choice("fallback", "Fallback state", { true: "On", false: "Off" })}
+            {field("fallbackSegment", "Fallback segment pattern", { options: templates.filter((t) => t.endsWith("-fallback")),
+              help: <>Must contain {"{value}"}. {values[0] && <>For {values[0]}: <code>{fields.fallbackSegment.replaceAll("{value}", values[0])}</code>{segments.length > 0 && (segments.includes(fields.fallbackSegment.replaceAll("{value}", values[0])) ? " exists." : " not in Flagsmith yet.")}</>}</> })}
+            {field("recoverySegment", "Recovery segment pattern", { options: templates.filter((t) => t.endsWith("-recovery")),
+              help: <>Must contain {"{value}"}. {values[0] && <>For {values[0]}: <code>{fields.recoverySegment.replaceAll("{value}", values[0])}</code>{segments.length > 0 && (segments.includes(fields.recoverySegment.replaceAll("{value}", values[0])) ? " exists." : " not in Flagsmith yet.")}</>}</> })}
+            <details className="wz-wide wz-more">
+              <summary>Flag values (only for flags that carry a value)</summary>
+              <div className="wz-grid">
+                {field("normalValue", "Normal value (JSON)", { props: { placeholder: '"primary"' } })}
+                {field("fallbackValue", "Fallback value (JSON)", { props: { placeholder: '"secondary"' } })}
+              </div>
+            </details>
+          </div>}
+
+          {stage === 3 && <div className="wz-grid">
+            <div className="wz-wide">{field("steps", "Traffic steps (%)", { help: <>First step 10% or less, each step larger, last 100%. Plan: {steps.map((s) => `${s}%`).join(" → ")}</> })}</div>
+            {field("samples", "Minimum orders per step", { props: { type: "number", min: 10, inputMode: "numeric" }, help: "Platform limit: 10 or more." })}
+            {field("errorRate", "Maximum error rate", { props: { type: "number", min: 0, max: 0.2, step: 0.01 }, help: <>Fraction, above 0 and at most 0.2. Now {Number.isFinite(Number(fields.errorRate)) ? `${(Number(fields.errorRate) * 100).toFixed(1)}%` : "–"}.</> })}
+            {field("consecutive", "Errors in a row that roll back", { props: { type: "number", min: 1 }, help: "Platform limit: 1 or more." })}
+            {field("window", "Guardrail window", { help: "A duration such as 20s or 1m." })}
+            {field("cooldown", "Wait after a rollback", { help: "A duration such as 60s." })}
+            {choice("autoAdvance", "After the first step", { true: "Advance on its own when the guardrail passes", false: "Wait for an operator at every step" })}
+            <p className="wz-wide wz-note">The operator always approves the fallback and starts recovery. Rollback is always automatic.</p>
+            <h4 className="wz-wide">How the guardrail reads your orders</h4>
+            {field("identityField", "Customer field", { options: data?.eventFields })}
+            {field("outcomeField", "Outcome field", { options: data?.eventFields, help: "Values success, error or rejected." })}
+            {field("amountField", "Amount field (optional)", { options: data?.eventFields, help: "Turns on money impact." })}
+            <details className="wz-wide wz-more">
+              <summary>Canary filter and PromQL (optional)</summary>
+              <div className="wz-grid">
+                <div className="wz-wide">{field("filters", "Canary filter (JSON object)", { area: true, help: "Only events matching every field count for the guardrail." })}</div>
+                {field("healthErrors", "PromQL errors query", { area: true })}
+                {field("healthTotal", "PromQL total query", { area: true })}
+              </div>
+            </details>
+          </div>}
+
+          {stage === 4 && <div className="wz-grid">
+            <div className="wz-field">
+              <label htmlFor="wz-url">Probe endpoint</label>
+              <select id="wz-url" value={fields.requestMethod === "POST" ? fields.url : ""} onChange={(event) => pickProbeTarget(event.target.value)}>
                 {!probeTargets[fields.url] && <option value={fields.url} disabled>{fields.url}</option>}
                 <option value={deliveryProbe}>{probeTargets[deliveryProbe].label}</option>
-                {(paymentProbeEnabled || initial?.probe.request.url === paymentProbe) &&
-                  <option value={paymentProbe}>{probeTargets[paymentProbe].label}</option>}
+                {(paymentProbeEnabled || playbook?.probe.request.url === paymentProbe) && <option value={paymentProbe}>{probeTargets[paymentProbe].label}</option>}
               </select>
-            </label>
-            <p className="muted">The probe sends <code>{fields.requestMethod} {fields.url}</code>.</p>
-            {input("every", "Probe interval", { pattern: duration, placeholder: "10s" })}
-            {input("healthyFor", "Required healthy duration", { pattern: duration, placeholder: "60s" })}
-            <p className="muted wizard-wide">Use a dedicated synthetic identity for each cohort.</p>
-            {values.map((value, i) => (
-              <label key={i}>Probe identity for {value}
-                <input required value={Object.hasOwn(identities, value) ? identities[value] : ""} onChange={(event) => {
-                  draftChanged();
-                  const identity = event.target.value;
-                  setIdentities((current) => ({ ...current, [value]: identity }));
-                }} />
-              </label>
-            ))}
-            <div className="wizard-wide">{area("body", "Request body (optional JSON)", { required: false })}</div>
-            {input("healthyStatus", "Expected healthy status", { type: "number", min: 100, max: 599 })}
-            {input("fallbackStatus", "Expected fallback status", { type: "number", min: 100, max: 599 })}
-            <div className="wizard-lookup wizard-wide">
-              <p className="muted" id="test-probe-help">Send one synthetic request for the selected cohort. The draft stays unsaved.</p>
-              <div className="row wizard-probe-row">
-                <label>Test cohort
-                  <select value={selectedProbe} aria-describedby="test-probe-help" onChange={(event) => {
-                    setProbeValue(event.target.value);
-                    probe.clear();
-                  }}>
-                    <option value="">Choose a cohort</option>
-                    {values.map((value) => <option key={value}>{value}</option>)}
-                  </select>
-                </label>
-                <button type="button" disabled={probe.pending || !selectedProbe}
-                  onClick={(event) => {
-                    if (!event.currentTarget.form?.reportValidity()) return;
-                    const draft = readDraft();
-                    if (draft) void probe.run({ playbook: draft, value: selectedProbe });
-                  }}>{probe.pending ? "Sending…" : "Send test probe"}</button>
+              <p className="wz-help"><code>{fields.requestMethod} {fields.url}</code> <Hint from={auto.url} /></p>
+            </div>
+            {field("every", "Send every", { help: "A duration such as 10s." })}
+            {field("healthyFor", "Healthy for", { help: "How long the probe must pass before recovery can start." })}
+            {field("healthyStatus", "Healthy status", { props: { type: "number", min: 100, max: 599 } })}
+            {field("fallbackStatus", "Status while on fallback", { props: { type: "number", min: 100, max: 599 } })}
+            <h4 className="wz-wide">Synthetic customer for each value</h4>
+            <p className="wz-wide wz-help">Probe orders use these identities and are left out of availability, the guardrail and impact.</p>
+            {values.map((value) => <div className="wz-field" key={value}>
+              <label htmlFor={`wz-id-${value}`}>{value}</label>
+              <input id={`wz-id-${value}`} value={identities[value] ?? ""} onChange={(event) => {
+                draftChanged();
+                const identity = event.target.value;
+                setAuto((current) => { const next = { ...current }; delete next[`id:${value}`]; return next; });
+                setIdentities((current) => ({ ...current, [value]: identity }));
+              }} />
+              {auto[`id:${value}`] && <p className="wz-help"><Hint from={auto[`id:${value}`]} /></p>}
+            </div>)}
+            <details className="wz-wide wz-more">
+              <summary>Request body</summary>
+              {field("body", "Request body (JSON)", { area: true, help: "May use {probe_identity} and {value}." })}
+            </details>
+            <div className="wz-wide wz-test">
+              <label htmlFor="wz-probe-value">Try it now</label>
+              <div className="row">
+                <select id="wz-probe-value" value={selectedProbe} onChange={(event) => { setProbeValue(event.target.value); probe.clear(); }}>
+                  {values.map((value) => <option key={value}>{value}</option>)}
+                </select>
+                <button type="button" disabled={probe.pending || !selectedProbe || stageProblems.length > 0}
+                  onClick={() => { const draft = readDraft(); if (draft) void probe.run({ playbook: draft, value: selectedProbe }); }}>
+                  {probe.pending ? "Sending…" : "Send one test probe"}
+                </button>
+                {probe.data && <span className="wizard-result" role="status">
+                  <Pill kind={probe.data.healthy ? "ok" : "bad"}>{probe.data.healthy ? "Healthy" : "Unhealthy"}</Pill>
+                  {probe.data.status != null && <span>HTTP {probe.data.status}</span>}
+                  {probe.data.error && <span>{probe.data.error}</span>}
+                </span>}
               </div>
               <WizardFeedback error={probe.error} />
-              {probe.data && <div className="wizard-result" role="status">
-                <Pill kind={probe.data.healthy ? "ok" : "bad"}>{probe.data.healthy ? "Healthy" : "Unhealthy"}</Pill>
-                {probe.data.status != null && <span>HTTP {probe.data.status}</span>}
-                {probe.data.error && <span>{probe.data.error}</span>}
-              </div>}
             </div>
-          </>}
-          {review && <>
-            <dl className="kv wizard-wide">
-              <dt>Playbook</dt><dd><code>{fields.id}</code></dd>
-              <dt>Owner</dt><dd>{fields.owner}</dd>
-              <dt>Alerts</dt><dd>{lines(fields.alerts).join(", ")}</dd>
-              <dt>Scope</dt><dd>{fields.dimension} · {values.join(", ")}</dd>
-              <dt>Flag</dt><dd><code>{fields.flag}</code></dd>
-              <dt>Recovery steps</dt><dd>{fields.steps}</dd>
-            </dl>
-            <div className="wizard-lookup wizard-wide">
-              <button type="button" disabled={saving || readiness.pending} onClick={() => {
-                const draft = readDraft();
-                if (draft) void readiness.run(draft);
-              }}>{readiness.pending ? "Checking…" : "Preview draft readiness"}</button>
+          </div>}
+
+          {review && <div className="wz-review">
+            <div className="wz-readiness" role="status">
+              {readiness.pending && <p>Running the readiness dry run…</p>}
+              {readiness.data && <>
+                <p className="wz-verdict"><Pill kind={readiness.data.readiness === "ready" ? "ok" : "bad"}>{readiness.data.readiness === "ready" ? "Ready" : "Broken"}</Pill>
+                  {readiness.data.readiness === "ready" ? "Flag, segments and recent orders all check out." : "It can be saved, but it cannot be applied until these are fixed:"}</p>
+                {!!readiness.data.reasons.length && <ul className="plain">{readiness.data.reasons.map((reason, i) => <li key={i}>{reason}</li>)}</ul>}
+              </>}
               <WizardFeedback error={readiness.error} />
-              {readiness.data && <div role="status">
-                <Pill kind={readiness.data.readiness === "ready" ? "ok" : "bad"}>{readiness.data.readiness}</Pill>
-                {!!readiness.data.reasons.length &&
-                  <ul className="plain">{readiness.data.reasons.map((reason, i) => <li key={i}>{reason}</li>)}</ul>}
-              </div>}
+              <button type="button" disabled={readiness.pending} onClick={() => { const draft = readDraft(); if (draft) void readiness.run(draft); }}>Run the dry run again</button>
             </div>
-          </>}
-        </div>
-        <WizardFeedback error={error} />
-        <div className="actions wizard-actions">
-          <button type="button" disabled={saving} onClick={onCancel}>Cancel</button>
-          {stage > 0 && <button type="button" disabled={saving} onClick={() => { setError(undefined); setStage(stage - 1); }}>Back</button>}
-          <button className="primary" type="submit" disabled={saving || probe.pending || readiness.pending}>
-            {saving ? "Saving…" : review ? (playbook ? "Save changes" : "Create playbook") : "Continue"}
-          </button>
-        </div>
-      </form>
+            <dl className="kv">
+              <dt>When</dt><dd>{lines(fields.alerts).join(", ")} fires ({fields.cause})</dd>
+              <dt>For</dt><dd>{fields.dimension}: {values.join(", ")}</dd>
+              <dt>Fallback</dt><dd><code>{fields.flag}</code> {fields.normal === "true" ? "on" : "off"} → {fields.fallback === "true" ? "on" : "off"}</dd>
+              <dt>Recovery</dt><dd>{steps.map((s) => `${s}%`).join(" → ")}, {fields.autoAdvance === "true" ? "advancing on its own" : "operator at each step"}; rollback above {(Number(fields.errorRate) * 100).toFixed(1)}% errors or {fields.consecutive} in a row</dd>
+              <dt>Probe</dt><dd>every {fields.every}, healthy for {fields.healthyFor}</dd>
+              <dt>Owner</dt><dd>{fields.owner}</dd>
+            </dl>
+          </div>}
+
+          {tried && stageProblems.length > 0 && <div className="notice err" role="alert">
+            <ul className="plain">{stageProblems.map((p) => <li key={p}>{p}</li>)}</ul>
+          </div>}
+          <WizardFeedback error={error} />
+          <div className="actions wizard-actions">
+            <button type="button" disabled={saving} onClick={onCancel}>Cancel</button>
+            {stage > 0 && <button type="button" disabled={saving} onClick={() => go(stage - 1)}>Back</button>}
+            <button className="primary" type="submit" disabled={saving || probe.pending}>
+              {saving ? "Saving…" : review ? (playbook ? `Save as v${playbook.version + 1}` : "Save playbook") : `Next: ${stages[stage + 1].title}`}
+            </button>
+          </div>
+        </form>
+        <aside className="wz-preview">
+          <details open={wide} key={String(wide)}>
+            <summary>Playbook preview</summary>
+            <p className="wz-help">This is what the controller stores. YAML seeds use the same shape.</p>
+            {previewError ? <p className="wz-warn">{previewError}</p> : <pre>{preview}</pre>}
+          </details>
+        </aside>
+      </div>
     </section>
   );
 }
