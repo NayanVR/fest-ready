@@ -42,7 +42,7 @@ export default function Playbooks({ initial, template }: { initial: Loaded<Playb
           opener.current = event.currentTarget;
           setFeedback(null);
           setWizard({ draft: template });
-        }}>Use payment demo template</button>}
+        }}>Create playbook from template</button>}
         <button className="primary" disabled={disabled} onClick={(event) => {
           opener.current = event.currentTarget;
           setFeedback(null);

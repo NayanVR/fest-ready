@@ -252,7 +252,7 @@ export default function PlaybookWizard({ playbook, draft, onCancel, onSave }: {
   return (
     <section className="card playbook-wizard" aria-labelledby="wizard-title">
       <div className="cardhead">
-        <h2 id="wizard-title">{playbook ? "Edit playbook" : draft ? "New payment failover playbook" : "Create playbook"}</h2>
+        <h2 id="wizard-title">{playbook ? "Edit playbook" : "Create playbook"}</h2>
         {playbook && <span className="muted"><code>{playbook.id}</code> · v{playbook.version}</span>}
       </div>
       <ol className="wizard-steps" aria-label="Wizard steps">

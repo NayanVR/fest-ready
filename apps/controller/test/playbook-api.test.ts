@@ -171,6 +171,42 @@ test("opening a pre-B7 database preserves the playbook used by existing incident
   }
 });
 
+test("state reports availability independently for each playbook dimension", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "controller-availability-"));
+  const controller = await startController(join(dir, "controller.db"));
+  try {
+    const { call } = controller;
+    const payment = {
+      ...seed,
+      id: "payment-fixture",
+      dimension: { ...seed.dimension, name: "paymentCohort" },
+      events: {
+        dimension_field: "paymentCohort", identity_field: "paymentCustomer", outcome_field: "paymentOutcome",
+        canary_filter: { paymentRoute: "primary" },
+      },
+    };
+    expect((await call("/api/playbooks", "POST", payment)).status).toBe(201);
+    const value = seed.dimension.values[0]!;
+    const record = async (event: object) => expect((await call("/internal/orders", "POST", event)).status).toBe(202);
+    await record({
+      ...seed.events.canary_filter,
+      [seed.events.dimension_field]: value, [seed.events.identity_field]: "delivery-user", [seed.events.outcome_field]: "success",
+    });
+    await record({ paymentCohort: value, paymentCustomer: "payment-user", paymentRoute: "primary", paymentOutcome: "error" });
+    await record({ paymentCohort: value, paymentCustomer: "payment-user", paymentRoute: "fallback", paymentOutcome: "success" });
+    expect((await call("/api/state")).body).toMatchObject({
+      availability: 0.5,
+      availabilityByDimension: expect.arrayContaining([
+        { dimension: seed.dimension.name, availability: 1, primaryAvailability: 1 },
+        { dimension: payment.dimension.name, availability: 0.5, primaryAvailability: 0 },
+      ]),
+    });
+  } finally {
+    await controller.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("wizard discovers live fixture inputs and checks drafts without changing saved readiness", async () => {
   const dir = mkdtempSync(join(tmpdir(), "controller-playbook-wizard-"));
   const path = join(dir, "controller.db");

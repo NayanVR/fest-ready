@@ -56,14 +56,13 @@ export function recentEventFields(db: Database): string[] {
 export const playbooksWithReadiness = (db: Database) =>
   Promise.all(listPlaybooks(db).map(async (pb) => ({ ...pb, ...(await readiness(db, pb)) })));
 
-// success / (success + error) over the last 5 min across every playbook's cohort (its values + canary_filter),
-// probe orders excluded. All values together: no per-value breakdown. Null when there are no such events.
-export function availability(playbooks: Playbook[], events: Ev[]): number | null {
+// Success / (success + error) across the selected cohorts, with probes excluded.
+export function availability(playbooks: Playbook[], events: Ev[], primaryOnly = true): number | null {
   let ok = 0, total = 0;
   for (const x of events) {
     const pb = playbooks.find((p) =>
       p.dimension.values.includes(x.body[p.events.dimension_field] as string) && !isProbe(p, x.body) &&
-      Object.entries(p.events.canary_filter ?? {}).every(([k, v]) => x.body[k] === v));
+      (!primaryOnly || Object.entries(p.events.canary_filter ?? {}).every(([k, v]) => x.body[k] === v)));
     const outcome = pb && x.body[pb.events.outcome_field];
     if (outcome === "success" || outcome === "error") {
       total++;
@@ -75,8 +74,21 @@ export function availability(playbooks: Playbook[], events: Ev[]): number | null
 
 export async function state(db: Database) {
   const pbs = await playbooksWithReadiness(db);
+  const events = eventsSince(db, Date.now() - AVAILABILITY_MS);
+  const byDimension = new Map<string, Playbook[]>();
+  for (const pb of pbs) {
+    const name = pb.dimension.name;
+    const group = byDimension.get(name) ?? [];
+    group.push(pb);
+    byDimension.set(name, group);
+  }
   return {
-    availability: availability(pbs, eventsSince(db, Date.now() - AVAILABILITY_MS)),
+    availability: availability(pbs, events),
+    availabilityByDimension: Array.from(byDimension, ([dimension, group]) => ({
+      dimension,
+      availability: availability(group, events, false),
+      primaryAvailability: availability(group, events),
+    })),
     openIncidents: countOpenIncidents(db),
     playbooks: { ready: pbs.filter((p) => p.readiness === "ready").length, broken: pbs.filter((p) => p.readiness === "broken").length },
   };
