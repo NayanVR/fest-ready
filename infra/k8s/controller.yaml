@@ -28,6 +28,8 @@ spec:
           value: "http://shop-api.shop"
         - name: PARTNER_URL
           value: "http://partner-mock.providers"
+        - name: PROMETHEUS_URL
+          value: "http://kube-prometheus-stack-prometheus.monitoring.svc:9090"
         - name: DB_PATH
           value: "/data/controller.db"
         - name: PLAYBOOK_DIR
