@@ -1,0 +1,12 @@
+{
+  "name": "load-generator",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "bun": "1.x" },
+  "scripts": {
+    "dev": "bun src/index.ts",
+    "start": "bun src/index.ts",
+    "test": "bun test --pass-with-no-tests"
+  }
+}
