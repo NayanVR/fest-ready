@@ -367,5 +367,6 @@ ul.plain { margin: 8px 0 0; padding-left: 18px; color: var(--muted); }
 .login .seg button { border: 0; background: none; justify-content: center; color: var(--muted); }
 .login .seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); font-weight: 500; }
 .login label small { color: var(--muted); font-weight: 400; font-size: 12px; line-height: 16px; }
+.login .demo-creds { margin: 0; background: var(--raised); border-radius: var(--radius-control); padding: 8px 10px; color: var(--text); }
 .login .err { background: var(--bad-bg); color: var(--bad-ink); border-radius: var(--radius-control); padding: 8px 10px; }
 .login .primary { justify-content: center; }

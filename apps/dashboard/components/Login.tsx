@@ -55,6 +55,7 @@ export default function Login({ next }: { next?: string }) {
             autoComplete={signup ? "new-password" : "current-password"} aria-describedby={signup ? "p-hint" : undefined} />
           {signup && <small id="p-hint">At least 4 characters.</small>}
         </label>
+        {!signup && <p className="demo-creds">Demo login: <b>admin</b> / <b>admin</b></p>}
         {error && <div className="err" role="alert">{error}</div>}
         <button className="primary" type="submit" disabled={busy}>{busy ? "Please wait…" : signup ? "Create account" : "Log in"}</button>
       </form>
