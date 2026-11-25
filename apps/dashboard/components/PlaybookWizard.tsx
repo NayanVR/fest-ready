@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import PlaybookAssistant from "./PlaybookAssistant";
 import type { ComponentProps, FormEvent, ReactNode } from "react";
-import type { Playbook, PlaybookRow } from "@/lib/types";
+import { SARVAM_VOICE_LANGUAGES, type Playbook, type PlaybookRow } from "@/lib/types";
 import { playbookTemplates } from "@/lib/playbook-templates";
 import { Pill, post } from "./ui";
 
@@ -18,11 +18,14 @@ type Draft = Omit<Playbook, "version">;
 type WizardError = { message: string; reasons?: string[] };
 type Readiness = Pick<PlaybookRow, "readiness" | "reasons">;
 type ProbeResult = { healthy: boolean; status: number | null; error: string | null };
-type Catalog = { flags: string[]; segments: string[]; alerts: string[]; metrics: string[]; labels: string[]; eventFields: string[]; unavailable: string[] };
+type Catalog = { flags: string[]; segments: string[]; alerts: string[]; metrics: string[]; labels: string[]; eventFields: string[]; unavailable: string[]; approvalCallAvailable?: boolean };
 
 const jsonText = (value: unknown) => value === undefined ? "" : JSON.stringify(value, null, 2);
 const lines = (value: string) => [...new Set(value.split(/[\n,]/).map((line) => line.trim()).filter(Boolean))];
 const durationRe = /^[0-9]+(ms|s|m|h)$/;
+const indianMobile = /^[6-9][0-9]{9}$/;
+const internationalPhone = /^\+[1-9][0-9]{6,14}$/;
+const voiceLanguageOptions = Object.fromEntries(SARVAM_VOICE_LANGUAGES.map((language) => [language, language]));
 const labelName = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const slug = (text: string) => text.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 const deliveryProbe = "${SHOP_URL}/api/orders";
@@ -105,6 +108,8 @@ function initialFields(p: Draft | undefined, defaultOwner: string | undefined, e
     samples: String(p?.recovery.guardrail.min_samples ?? 10), errorRate: String(p?.recovery.guardrail.max_error_rate ?? 0.05),
     consecutive: String(p?.recovery.guardrail.max_consecutive_errors ?? 3),
     window: p?.recovery.guardrail.window ?? "20s", cooldown: p?.recovery.cooldown_after_rollback ?? "60s",
+    approvalCall: p?.approval_call ? "on" : "off", approvalPhone: p?.approval_call?.phone_number ?? "",
+    approvalDelay: String(p?.approval_call?.delay_minutes ?? 5), approvalLanguage: p?.approval_call?.language ?? "English",
     every: p?.probe.every ?? "10s", healthyFor: p?.probe.healthy_for ?? "60s",
     requestMethod: p?.probe.request.method ?? "POST", url,
     body: jsonText(body), healthyStatus: String(p?.probe.expect.healthy.status ?? 201),
@@ -126,7 +131,21 @@ function flagState(enabled: string, text: string, label: string) {
   return { enabled: enabled === "true", value };
 }
 
-function draftPlaybook(f: Fields, identities: Record<string, string>): Draft {
+function approvalCall(f: Fields): Playbook["approval_call"] {
+  if (f.approvalCall !== "on") return undefined;
+  const enteredPhone = f.approvalPhone.trim();
+  const phone_number = indianMobile.test(enteredPhone) ? `+91${enteredPhone}` : enteredPhone;
+  if (!internationalPhone.test(phone_number))
+    throw new Error("Enter a mobile number with its country code or a 10-digit Indian mobile number.");
+  const delay_minutes = Number(f.approvalDelay);
+  if (!Number.isInteger(delay_minutes) || delay_minutes < 1 || delay_minutes > 1440)
+    throw new Error("Enter an approval wait time from 1 to 1440 minutes.");
+  const language = SARVAM_VOICE_LANGUAGES.find((language) => language === f.approvalLanguage);
+  if (!language) throw new Error("Choose a language for the approval call.");
+  return { phone_number, delay_minutes, language };
+}
+
+function draftPlaybook(f: Fields, identities: Record<string, string>, includeApprovalCall = true): Draft {
   const filters = parseJson(f.filters, "Canary filter");
   if (filters !== undefined && (filters === null || typeof filters !== "object" || Array.isArray(filters)))
     throw new Error("Canary filter must be a JSON object.");
@@ -150,6 +169,7 @@ function draftPlaybook(f: Fields, identities: Record<string, string>): Draft {
       },
       cooldown_after_rollback: f.cooldown.trim(),
     },
+    ...(includeApprovalCall && { approval_call: approvalCall(f) }),
     events: {
       dimension_field: f.dimensionField.trim(), identity_field: f.identityField.trim(),
       outcome_field: f.outcomeField.trim(), amount_field: f.amountField.trim() || undefined,
@@ -207,6 +227,7 @@ function problems(stage: number, f: Fields, identities: Record<string, string>, 
     if (!(Number.isInteger(Number(f.consecutive)) && Number(f.consecutive) >= 1)) out.push("Maximum consecutive errors must be 1 or more.");
     if (!durationRe.test(f.window.trim())) out.push("Window must be a duration such as 20s or 1m.");
     if (!durationRe.test(f.cooldown.trim())) out.push("Cooldown must be a duration such as 60s.");
+    try { approvalCall(f); } catch (e) { out.push((e as Error).message); }
     need(f.identityField, "Add the order-event field that identifies the customer.");
     need(f.outcomeField, "Add the order-event field that holds the outcome.");
     json(f.filters, "Canary filter");
@@ -404,8 +425,14 @@ export default function PlaybookWizard({ playbook, existing = [], defaultOwner, 
 
   // An AI draft fills every step, then jumps to Review so the readiness dry run checks it. The human still saves.
   function applyAI(d: object) {
-    const draft = d as Draft;
-    setFields(initialFields(draft, defaultOwner, true));
+    const draft = { ...(d as Draft), approval_call: undefined };
+    setFields((current) => ({
+      ...initialFields(draft, defaultOwner, true),
+      approvalCall: current.approvalCall,
+      approvalPhone: current.approvalPhone,
+      approvalDelay: current.approvalDelay,
+      approvalLanguage: current.approvalLanguage,
+    }));
     setIdentities(draft.probe?.identities ?? {});
     setAuto({});
     setError(undefined);
@@ -576,6 +603,15 @@ export default function PlaybookWizard({ playbook, existing = [], defaultOwner, 
             {field("cooldown", "Wait after a rollback", { help: "A duration such as 60s." })}
             {choice("autoAdvance", "After the first step", { true: "Advance on its own when the guardrail passes", false: "Wait for an operator at every step" })}
             <p className="wz-wide wz-note">The operator always approves the fallback and starts recovery. Rollback is always automatic.</p>
+            <h4 className="wz-wide">Approval reminder</h4>
+            <p className="wz-wide wz-help">Sarvam can call once for each overdue fallback or recovery approval. Review and approve in FestReady.</p>
+            {choice("approvalCall", "Call if approval is overdue", { off: "Off", on: "On" })}
+            {fields.approvalCall === "on" && <>
+              {data?.approvalCallAvailable === false && <p className="wz-wide wz-help">Calling requires Sarvam Voice Agents setup on the controller.</p>}
+              {field("approvalDelay", "Wait time (minutes)", { props: { type: "number", min: 1, max: 1440, step: 1 } })}
+              {field("approvalPhone", "Mobile number", { props: { type: "tel", autoComplete: "tel" }, help: "Use a country code such as +91 or enter a 10-digit Indian mobile number. Leave out spaces." })}
+              {choice("approvalLanguage", "Call language", voiceLanguageOptions)}
+            </>}
             <h4 className="wz-wide">How the guardrail reads your orders</h4>
             {field("identityField", "Customer field", { options: data?.eventFields })}
             {field("outcomeField", "Outcome field", { options: data?.eventFields, help: "Values success, error or rejected." })}
@@ -656,6 +692,9 @@ export default function PlaybookWizard({ playbook, existing = [], defaultOwner, 
               <dt>For</dt><dd>{fields.dimension}: {values.join(", ")}</dd>
               <dt>Fallback</dt><dd><code>{fields.flag}</code> {fields.normal === "true" ? "on" : "off"} → {fields.fallback === "true" ? "on" : "off"}</dd>
               <dt>Recovery</dt><dd>{steps.map((s) => `${s}%`).join(" → ")}, {fields.autoAdvance === "true" ? "advancing on its own" : "operator at each step"}; rollback above {(Number(fields.errorRate) * 100).toFixed(1)}% errors or {fields.consecutive} in a row</dd>
+              <dt>Approval reminder</dt><dd>{fields.approvalCall === "on"
+                ? `${fields.approvalLanguage} call to number ending in ${fields.approvalPhone.trim().slice(-4)} after ${fields.approvalDelay} ${Number(fields.approvalDelay) === 1 ? "minute" : "minutes"}`
+                : "Off"}</dd>
               <dt>Probe</dt><dd>every {fields.every}, healthy for {fields.healthyFor}</dd>
               <dt>Owner</dt><dd>{fields.owner}</dd>
             </dl>
@@ -675,7 +714,7 @@ export default function PlaybookWizard({ playbook, existing = [], defaultOwner, 
         </form>
         <div className="wz-preview">
           <PlaybookAssistant inline onApply={applyAI}
-            draft={(() => { try { return draftPlaybook(fields, identities); } catch { return undefined; } })()} />
+            draft={(() => { try { return draftPlaybook(fields, identities, false); } catch { return undefined; } })()} />
         </div>
       </div>
     </section>

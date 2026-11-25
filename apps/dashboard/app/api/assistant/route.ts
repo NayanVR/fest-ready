@@ -1,6 +1,7 @@
 // Playbook assistant (server only). Behind the login gate in proxy.ts. SARVAM_API_KEY and ADMIN_SECRET never leave the server.
 // It only drafts: discovery and the readiness dry-run are read-only, and nothing is ever saved from here.
 import { NextRequest } from "next/server";
+import type { PlaybookRow } from "@/lib/types";
 import { controllerUrl } from "@/lib/server";
 import { parseAnswer, systemPrompt, type Context, type Msg } from "@/lib/assistant";
 
@@ -25,7 +26,11 @@ async function context(): Promise<Context> {
     try { return await f(); } catch { unavailable.push(name); return empty; }
   };
   const [playbooks, flags, eventFields] = await Promise.all([
-    get("playbooks", async () => { const r = await controller("playbooks"); if (!r.ok) throw 0; return r.json as any[]; }, []),
+    get("playbooks", async () => {
+      const r = await controller("playbooks");
+      if (!r.ok) throw 0;
+      return (r.json as PlaybookRow[]).map(({ approval_call, ...playbook }) => playbook);
+    }, []),
     // Flag search needs a term; a few common characters cover typical snake/kebab-case keys.
     get("Flagsmith flags", async () => {
       const rs = await Promise.all(["_", "-", "e", "a"].map((search) => controller("playbook-wizard/flags", { search })));
@@ -71,7 +76,8 @@ export async function POST(req: NextRequest) {
   if (!Array.isArray(msgs) || !msgs.length || msgs.length > 40 ||
       !msgs.every((m: any) => (m?.role === "user" || m?.role === "assistant") && typeof m.content === "string" && m.content.length <= 8000))
     return fail(400, "BAD_REQUEST", "messages must be 1–40 {role: user|assistant, content} items");
-  const draft = body.draft && typeof body.draft === "object" && !Array.isArray(body.draft) ? body.draft : undefined;
+  const draft = body.draft && typeof body.draft === "object" && !Array.isArray(body.draft) ? { ...body.draft } : undefined;
+  if (draft) delete draft.approval_call;
 
   const deadline = Date.now() + TIMEOUT;
   const convo = [{ role: "system", content: systemPrompt(await context(), draft) }, ...(msgs as Msg[])];

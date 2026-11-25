@@ -23,6 +23,8 @@ spec:
         - {name: http, containerPort: 4100}
         readinessProbe:
           httpGet: {path: /healthz, port: http}
+        envFrom:
+        - secretRef: {name: sarvam-voice, optional: true}
         env:
         - name: SHOP_URL
           value: "http://shop-api.shop"

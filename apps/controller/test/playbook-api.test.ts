@@ -333,6 +333,7 @@ test("wizard catalog combines configured and observed names and keeps local resu
     const local = {
       alerts: [...seed.match.alerts, observedAlert].sort(),
       eventFields: [seed.events.dimension_field, seed.events.identity_field].sort(),
+      approvalCallAvailable: false,
     };
     expect(await controller.call(route, "POST", {})).toEqual({
       status: 200,
@@ -359,6 +360,28 @@ test("wizard catalog combines configured and observed names and keeps local resu
         unavailable: ["Flagsmith flags", "Flagsmith segments", "Prometheus alerts", "Prometheus labels", "Prometheus metrics"],
       },
     });
+  } finally {
+    await controller?.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+}, 15_000);
+
+test("playbook API can save and disable a localized approval call", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "controller-approval-call-api-"));
+  let controller: Awaited<ReturnType<typeof startController>> | undefined;
+  try {
+    controller = await startController(join(dir, "controller.db"));
+    const { call } = controller;
+    const draft = { ...seed, id: "fixture-approval-call" };
+    const approval_call = { phone_number: "+12025550101", delay_minutes: 7, language: "Gujarati" };
+    expect(await call("/api/playbooks", "POST", { ...draft, approval_call: { ...approval_call, language: "unknown" } }))
+      .toMatchObject({ status: 422, body: { reasons: ["approval_call.language must be a supported Sarvam voice language"] } });
+    expect(await call("/api/playbooks", "POST", { ...draft, approval_call }))
+      .toMatchObject({ status: 201, body: { version: 1, approval_call } });
+    const path = `/api/playbooks/${draft.id}`;
+    expect(await call(path)).toMatchObject({ status: 200, body: { approval_call } });
+    expect(await call(path, "PUT", draft)).toMatchObject({ status: 200, body: { version: 2 } });
+    expect((await call(path)).body).not.toHaveProperty("approval_call");
   } finally {
     await controller?.stop();
     rmSync(dir, { recursive: true, force: true });

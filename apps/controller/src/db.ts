@@ -25,6 +25,12 @@ export function openDb(path = process.env.DB_PATH || "./data/controller.db"): Da
     db.run(`UPDATE incidents SET playbook_snapshot = (SELECT body FROM playbooks WHERE id = incidents.playbook)
       WHERE playbook IS NOT NULL`);
   }).immediate();
+  db.run(`CREATE TABLE IF NOT EXISTS approval_call_waits (
+    incident INTEGER PRIMARY KEY, pending_since INTEGER NOT NULL, claimed INTEGER NOT NULL DEFAULT 0)`);
+  db.run(`CREATE TRIGGER IF NOT EXISTS clear_approval_call_wait_on_transition
+    AFTER UPDATE OF state, playbook, value ON incidents
+    WHEN OLD.state IS NOT NEW.state OR OLD.playbook IS NOT NEW.playbook OR OLD.value IS NOT NEW.value
+    BEGIN DELETE FROM approval_call_waits WHERE incident = NEW.n; END`);
   db.run(`CREATE TABLE IF NOT EXISTS findings (
     id INTEGER PRIMARY KEY AUTOINCREMENT, incident INTEGER NOT NULL,
     source TEXT NOT NULL, playbook TEXT, value TEXT, cause TEXT NOT NULL,
