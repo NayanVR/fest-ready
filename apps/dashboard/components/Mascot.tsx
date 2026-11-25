@@ -9,60 +9,74 @@ const LABEL: Record<MascotMood, string> = {
   calm: "FestReady mascot, relaxed: mitigated",
 };
 
-// Hand-drawn, flat, ink + the one accent. The paper colour (--mc-paper, default --surface) cuts the sticker gaps between shapes.
+// Chibi, flat, ink + the one accent (+ a soft blush). The paper colour (--mc-paper, default --surface) cuts the sticker gaps between shapes.
 export default function Mascot({ mood = "happy", size = 96 }: { mood?: MascotMood; size?: number }) {
   return (
     <svg className={`mc mc-${mood}`} viewBox="0 0 200 200" width={size} height={size} role="img" aria-label={LABEL[mood]}>
       <g className="mc-all">
         <g className="mc-sparks">
-          <path d="M160 124 L156 112" /><path d="M171 128 L181 119" /><path d="M178 139 L191 135" />
+          <path d="M163 130 L159 119" /><path d="M174 134 L183 126" /><path d="M181 145 L192 142" />
         </g>
 
         <g className="mc-body">
-          <path className="ink" d="M70 134 C60 152 58 170 62 183 Q64 191 72 191 L118 191 Q126 191 127 183 C130 168 125 150 118 134 Z" />
+          <ellipse className="ink" cx="82" cy="190" rx="12" ry="6.5" />
+          <ellipse className="ink" cx="108" cy="190" rx="12" ry="6.5" />
+          <ellipse className="ink paper-line" cx="95" cy="166" rx="33" ry="27" />
+          <circle className="ink paper-line" cx="66" cy="172" r="8.5" />
         </g>
 
         <g className="mc-laptop">
-          <path className="ink paper-line" d="M108 146 L168 139 L161 181 L98 186 Z" />
-          <path className="mc-sparkle" d="M138 150 C139 158 141 160 149 162 C141 164 139 166 138 174 C137 166 135 164 127 162 C135 160 137 158 138 150 Z" />
+          <rect className="mc-lid paper-line" x="108" y="143" width="70" height="45" rx="12" transform="rotate(-6 143 166)" />
+          <path className="mc-sparkle" d="M144 153 Q145 164 156 166 Q145 168 144 179 Q143 168 132 166 Q143 164 144 153 Z" />
         </g>
         <g className="mc-arm">
-          <path className="ink" d="M74 146 C88 146 100 154 112 160 L108 176 C94 176 82 170 70 160 Z" />
-          <circle className="ink paper-line" cx="113" cy="168" r="8.5" />
-        </g>
-
-        <g className="mc-flag">
-          <path className="ink-stroke thin" d="M100 40 L100 13" />
-          <path className="mc-cloth" d="M101 13 C113 7 123 20 137 12 C133 19 133 25 137 31 C123 37 113 26 101 31 Z" />
+          <path className="ink-stroke arm" d="M82 164 Q95 180 110 182" />
+          <ellipse className="ink" cx="112" cy="183" rx="9.5" ry="8.5" />
         </g>
 
         <g className="mc-head">
-          <circle className="ink paper-line" cx="100" cy="86" r="48" />
-          <ellipse className="mc-window" cx="100" cy="90" rx="36" ry="29" />
-          <g className="mc-headset">
-            <rect className="paper-line" x="42" y="72" width="14" height="30" rx="7" />
-            <path className="mic" d="M49 100 Q52 118 70 120" />
+          <g className="mc-flag">
+            <path className="flag-pole" d="M100 40 L100 9" />
+            <path className="mc-cloth" d="M101 9 C112 3 122 14 135 8 C131 14 131 21 135 27 C122 32 112 22 101 26 Z" />
           </g>
+          <circle className="ink paper-line" cx="100" cy="86" r="56" />
+          <ellipse className="mc-window" cx="100" cy="90" rx="46" ry="40" />
+          <g className="mc-headset">
+            <rect className="paper-line" x="34" y="72" width="16" height="32" rx="8" />
+            <rect className="paper-line" x="150" y="72" width="16" height="32" rx="8" />
+            <path className="mic" d="M42 102 Q44 124 62 126" />
+            <circle className="mic-tip" cx="63" cy="126" r="3.6" />
+          </g>
+          <g className="mc-cheeks"><ellipse cx="68" cy="106" rx="7.5" ry="5" /><ellipse cx="132" cy="106" rx="7.5" ry="5" /></g>
           <g className="mc-eyes">
-            {mood === "happy" && <path className="line" d="M76 94 Q84 82 92 94 M108 94 Q116 82 124 94" />}
-            {mood === "calm" && <path className="line soft" d="M76 88 Q84 97 92 88 M108 88 Q116 97 124 88" />}
+            {mood === "happy" && <path className="line" d="M73 95 Q82 80 91 95 M109 95 Q118 80 127 95" />}
+            {mood === "calm" && <path className="line" d="M73 90 Q82 100 91 90 M109 90 Q118 100 127 90" />}
             {mood === "alert" && (
               <>
-                <circle className="ink" cx="84" cy="88" r="8" /><circle className="ink" cx="116" cy="88" r="8" />
-                <circle className="glint" cx="87" cy="85" r="2.6" /><circle className="glint" cx="119" cy="85" r="2.6" />
+                <ellipse className="ink" cx="82" cy="88" rx="8.8" ry="10.8" /><ellipse className="ink" cx="118" cy="88" rx="8.8" ry="10.8" />
+                <circle className="glint" cx="85.5" cy="83.5" r="3.5" /><circle className="glint" cx="121.5" cy="83.5" r="3.5" />
+                <circle className="glint" cx="79" cy="93" r="1.6" /><circle className="glint" cx="115" cy="93" r="1.6" />
               </>
             )}
             {mood === "working" && (
               <>
-                <ellipse className="ink" cx="88" cy="94" rx="7" ry="6.5" /><ellipse className="ink" cx="120" cy="94" rx="7" ry="6.5" />
-                <circle className="glint" cx="91" cy="92" r="2.2" /><circle className="glint" cx="123" cy="92" r="2.2" />
+                <ellipse className="ink" cx="82" cy="92" rx="8.2" ry="9.4" /><ellipse className="ink" cx="118" cy="92" rx="8.2" ry="9.4" />
+                <circle className="glint" cx="85.2" cy="88" r="3.2" /><circle className="glint" cx="121.2" cy="88" r="3.2" />
+                <circle className="glint" cx="79.5" cy="96.5" r="1.5" /><circle className="glint" cx="115.5" cy="96.5" r="1.5" />
               </>
             )}
           </g>
+          {mood === "happy" && <path className="mouth" d="M93 105 Q96.5 111.5 100 105 Q103.5 111.5 107 105" />}
+          {mood === "calm" && <path className="mouth" d="M94.5 106 Q100 111 105.5 106" />}
+          {mood === "working" && <path className="mouth" d="M95.5 108 Q100 112 104.5 108" />}
+          {mood === "alert" && <ellipse className="ink" cx="100" cy="109" rx="3.4" ry="4.3" />}
         </g>
 
         {mood === "alert" && (
-          <g className="mc-bang"><path d="M152 34 L152 48" /><circle cx="152" cy="58" r="2.8" /></g>
+          <>
+            <g className="mc-bang"><path d="M158 30 L158 45" /><circle cx="158" cy="55" r="3" /></g>
+            <path className="mc-drop" d="M46 44 Q38 55 46 60 Q54 55 46 44 Z" />
+          </>
         )}
       </g>
     </svg>
