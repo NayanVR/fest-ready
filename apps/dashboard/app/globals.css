@@ -59,6 +59,8 @@ p { margin: 0; }
 .cols { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: var(--gap); align-items: start; }
 .cols > div { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
 .cols.eq { grid-template-columns: 1fr 1fr; align-items: stretch; }
+/* live incident: the recovery panel (Advance / Rollback) sits above the findings that justified it */
+.cols > div > .first { order: -1; }
 
 /* KPI strip: one container split by 1px dividers */
 .kpis { display: grid; grid-template-columns: 1.4fr 1fr 1fr; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); }
@@ -155,6 +157,71 @@ ul.plain { margin: 8px 0 0; padding-left: 18px; color: var(--muted); }
 .chips button.sel { background: var(--primary); border-color: var(--primary); color: #fff; }
 .id-sel { font-family: var(--mono); font-size: 13px; }
 
+/* Desktop / screen recording (1280-1440+): larger type, roomier rows, recovery + findings carry the incident page */
+@media (min-width: 1100px) {
+  :root { --pad: 32px; --gap: 16px; --control-h: 38px; --rail: clamp(340px, 28vw, 420px); }
+  body { font-size: 15px; line-height: 22px; }
+  code, .mono, td.id, .id, .id-sel { font-size: 14px; }
+  h1 { font-size: 30px; line-height: 36px; }
+  h2 { font-size: 18px; line-height: 24px; }
+  .canvas { padding: 28px var(--pad) 64px; }
+  .canvas > .sub { font-size: 16px; line-height: 24px; margin-bottom: 18px; }
+  .side .brand b { font-size: 16px; }
+  .side .brand small, .side .group, .side .rule { font-size: 13px; line-height: 18px; }
+  .side nav a { padding: 8px 10px; }
+  .card { padding: 24px; }
+  .cardhead { margin-bottom: 16px; }
+  .pill { height: 22px; line-height: 22px; font-size: 13px; padding: 0 9px; }
+  th { font-size: 13px; line-height: 18px; padding-bottom: 10px; }
+  td { padding: 14px 16px 14px 0; }
+  .kv dt, .kv dd { padding: 10px 0; }
+  .cols { grid-template-columns: minmax(0, 1fr) var(--rail); }
+  .kpis > div { padding: 24px 28px; }
+  .kpis .val { font-size: 48px; line-height: 56px; margin-top: 6px; letter-spacing: -0.02em; }
+  .kpis .val small { font-size: 15px; }
+  .kpis .note { font-size: 13px; line-height: 18px; margin-top: 6px; }
+  .step { font-size: 15px; padding-top: 10px; }
+  .step small { font-size: 13px; line-height: 18px; min-height: 18px; }
+  .step.now { border-top-width: 4px; margin-top: -1px; }
+  .summary { font-size: 15px; line-height: 23px; padding: 14px 18px; max-width: none; margin: 14px 0; }
+  ul.plain { font-size: 14px; line-height: 20px; margin-top: 0; }
+  ul.plain li + li { margin-top: 4px; }
+  .meta { font-size: 15px; }
+  .ladder { gap: 6px; margin: 16px 0 8px; }
+  .ladder div { font-size: 14px; line-height: 20px; }
+  .ladder div::before { height: 14px; border-radius: 3px; margin-bottom: 8px; }
+  .bignum { font-size: 64px; line-height: 72px; letter-spacing: -0.03em; }
+  .bignum small { font-size: 15px; letter-spacing: 0; }
+  .metrics { gap: 28px; margin-top: 24px; }
+  .bar { height: 8px; border-radius: 4px; }
+  .dot { width: 12px; height: 12px; }
+  .dots { gap: 6px; }
+  .actions { margin-top: 20px; }
+  .actions button, .actions .btn { height: 42px; padding: 0 20px; font-weight: 500; }
+  .card.focus { box-shadow: inset 4px 0 0 var(--data); }
+  /* overview: the strip and the incident rows are the whole screen, so they carry it */
+  .kpis > div { padding: 32px 32px 28px; }
+  .kpis .label { font-size: 16px; }
+  .kpis .val { font-size: 64px; line-height: 72px; }
+  .kpis .val small { font-size: 18px; }
+  .kpis .note { font-size: 14px; line-height: 20px; margin-top: 8px; }
+  .canvas > .sub { max-width: 110ch; }
+  table.audit td { padding: 12px 16px 12px 0; }
+  table.audit th:nth-child(4), table.audit td:nth-child(4) { width: 40%; }
+  table.audit th:nth-child(5), table.audit td:nth-child(5) { width: 32%; }
+  table.audit td:nth-child(5) { font-size: 14px; line-height: 20px; }
+  table.audit td:nth-child(1) { white-space: nowrap; }
+  table.incs { font-size: 16px; line-height: 24px; }
+  table.incs td { padding: 20px 16px 20px 0; vertical-align: middle; }
+  table.incs td.id { font-size: 15px; white-space: nowrap; }
+  table.incs td:last-child { white-space: nowrap; }
+  table.incs th { font-size: 14px; }
+  table.incs .pill { height: 26px; line-height: 26px; font-size: 14px; padding: 0 12px; }
+}
+@media (min-width: 1100px) and (max-width: 1360px) {
+  :root { --pad: 28px; }
+  .bignum { font-size: 56px; line-height: 64px; }
+}
 @media (max-width: 1000px) {
   .cols { grid-template-columns: 1fr; }
 }

@@ -40,11 +40,11 @@ export default function Overview(p: { state: Loaded<State>; incidents: Loaded<In
         </div>
       </div>
 
-      <div className="cols eq" style={{ gridTemplateColumns: "minmax(0,1.6fr) minmax(0,1fr)" }}>
+      <div className="cols eq" style={{ gridTemplateColumns: "minmax(0,2fr) minmax(0,1fr)" }}>
         <div className="card">
           <div className="cardhead"><h2>Incidents</h2><span className="muted">{incidents.length} total, newest first</span></div>
           <div className="scroll">
-            <table>
+            <table className="incs">
               <thead><tr><th>ID</th><th>Title</th><th>Status</th><th className="hide-sm">Owner</th><th className="hide-sm">Opened</th></tr></thead>
               <tbody>
                 {incidents.map((i) => (

@@ -72,7 +72,7 @@ export default function Incident({ id, initial }: { id: string; initial: Loaded<
 
       <div className="cols">
         <div>
-          <section className="card">
+          <section className="card focus">
             <div className="cardhead">
               <h2>Findings</h2>
               {f && <><Pill>{f.source}</Pill><span className="muted">{fmt(f.submittedAt)}</span></>}
@@ -125,7 +125,7 @@ export default function Incident({ id, initial }: { id: string; initial: Loaded<
           )}
 
           {rec && inc.status !== "Investigating" && (
-            <section className="card">
+            <section className={`card focus${done ? "" : " first"}`}>
               <div className="cardhead">
                 <h2>Recovery</h2>
                 <Pill>{rec.state}</Pill>
@@ -171,20 +171,6 @@ export default function Incident({ id, initial }: { id: string; initial: Loaded<
             </section>
           )}
 
-          <section className="card">
-            <div className="cardhead"><h2>Timeline</h2><span className="muted">{(inc.timeline ?? []).length} entries</span></div>
-            <div className="scroll">
-              <table>
-                <thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Result</th></tr></thead>
-                <tbody>
-                  {[...(inc.timeline ?? [])].reverse().map((t, i) => (
-                    <tr key={i}><td title={t.ts}>{clock(t.ts)}</td><td>{t.actor}</td><td>{t.action}</td><td>{t.result}</td></tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {(inc.timeline ?? []).length === 0 && <div className="empty">Nothing yet.</div>}
-          </section>
         </div>
 
         <div>
@@ -263,6 +249,21 @@ export default function Incident({ id, initial }: { id: string; initial: Loaded<
           )}
         </div>
       </div>
+
+      <section className="card">
+        <div className="cardhead"><h2>Timeline</h2><span className="muted">{(inc.timeline ?? []).length} entries</span></div>
+        <div className="scroll">
+          <table>
+            <thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Result</th></tr></thead>
+            <tbody>
+              {[...(inc.timeline ?? [])].reverse().map((t, i) => (
+                <tr key={i}><td title={t.ts}>{clock(t.ts)}</td><td>{t.actor}</td><td>{t.action}</td><td>{t.result}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {(inc.timeline ?? []).length === 0 && <div className="empty">Nothing yet.</div>}
+      </section>
     </>
   );
 }

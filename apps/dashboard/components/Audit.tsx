@@ -24,7 +24,7 @@ export default function Audit({ initial }: { initial: Loaded<AuditRow[]> }) {
           <input aria-label="Filter by incident" placeholder="Filter: INC-0042" value={inc} onChange={(e) => setInc(e.target.value)} style={{ width: 200 }} />
         </div>
         <div className="scroll">
-          <table>
+          <table className="audit">
             <thead><tr><th>Time</th><th>Incident</th><th>Actor</th><th>Action</th><th>Flag state: before → after, read back</th><th>Result</th></tr></thead>
             <tbody>
               {rows.map((r, i) => (
