@@ -1,0 +1,46 @@
+// Shapes from docs/CONTRACTS.md §3.4 (incident detail) and §8 (playbook).
+export type Findings = {
+  source: string; cause: string; summary: string; nubiUrl?: string | null;
+  evidence?: string[]; submittedAt?: string;
+};
+export type Recovery = {
+  state: string; splitPercent: number; observedSharePercent: number | null;
+  samples: number; minSamples: number; errorRate: number; maxErrorRate: number;
+  consecutiveErrors: number; guardrail: string; advanceAllowed: boolean;
+};
+export type Incident = {
+  id: string; title: string; status: string; owner: string | null; alert: string;
+  playbook: string | null; value: string | null; findings: Findings | null;
+  openedAt: string | null; mitigatedAt: string | null; resolvedAt: string | null; closedAt: string | null;
+  recovery: Recovery | null;
+  probe: { healthy: boolean; healthySince: string | null; healthyFor: string | null; last: boolean[] } | null;
+  impact: {
+    ordersFailed: number; amountFailed: number; ordersSaved: number; amountSaved: number;
+    atRiskPerMinute: number; customersAffected: number;
+  } | null;
+  timeline: { ts: string; actor: string; action: string; result: string }[];
+};
+export type Playbook = {
+  id: string; version?: number; owner?: string; description?: string;
+  match?: { alerts: string[]; cause: string };
+  dimension?: { name: string; values: string[] };
+  flag?: { key: string; normal: { enabled: boolean }; fallback: { enabled: boolean } };
+  segments?: { fallback: string; recovery: string };
+  recovery?: { method: string; steps: number[] };
+};
+
+// "Other read shapes" in CONTRACTS.md §3.4.
+export type State = {
+  availability: number | null;                  // fraction 0..1, null if no events
+  openIncidents: number;
+  playbooks: { ready: number; broken: number };
+};
+export type IncidentRow = Pick<Incident,
+  "id" | "title" | "status" | "owner" | "alert" | "playbook" | "value" | "openedAt" | "closedAt">;
+export type PlaybookRow = Playbook & { readiness: "ready" | "broken"; reasons: string[] };
+export type FlagState = { fallbackActive: boolean; fallbackEnabled: boolean; fallbackValue: string | null; splitPercent: number } | null; // CONTRACTS §3.4
+export type AuditRow = {
+  ts: string; incidentId: string | null; actor: string; action: string;
+  before: FlagState; after: FlagState; readBack: FlagState; result: string;
+};
+export type FaultResult = { ok: true; provider: string; outage: boolean };
