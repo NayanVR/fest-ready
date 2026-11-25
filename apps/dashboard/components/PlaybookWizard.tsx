@@ -1,14 +1,63 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import type { ComponentProps, FormEvent } from "react";
-import type { Playbook } from "@/lib/types";
-import { operator, post } from "./ui";
+import type { Playbook, PlaybookRow } from "@/lib/types";
+import { operator, Pill, post } from "./ui";
 
 const stages = ["Basics", "Scope", "Signals", "Recovery", "Probe", "Review"];
 const jsonText = (value: unknown) => value === undefined ? "" : JSON.stringify(value, null, 2);
 const lines = (value: string) => value.split("\n").map((line) => line.trim()).filter(Boolean);
 const duration = "[0-9]+(ms|s|m|h)";
 const probeUrl = "${SHOP_URL}/api/orders";
+type WizardError = { message: string; reasons?: string[] };
+type Readiness = Pick<PlaybookRow, "readiness" | "reasons">;
+type ProbeResult = { healthy: boolean; status: number | null; error: string | null };
+type Helper = "flags" | "label-values" | "event-fields" | "readiness" | "probe";
+
+function useWizardRequest<T>(helper: Helper) {
+  const [state, setState] = useState<{ pending?: boolean; data?: T; error?: WizardError }>({});
+  const sequence = useRef(0);
+
+  function clear() {
+    sequence.current++;
+    setState({});
+  }
+
+  async function run(body: unknown) {
+    const request = ++sequence.current;
+    setState({ pending: true });
+    const result = await post(`playbook-wizard/${helper}`, body);
+    if (request !== sequence.current) return;
+    if (result.ok && result.json) {
+      setState({ data: result.json });
+    } else {
+      setState({
+        error: {
+          message: result.json?.message ?? result.json?.error ?? `Controller returned HTTP ${result.status}.`,
+          reasons: Array.isArray(result.json?.reasons) ? result.json.reasons : undefined,
+        },
+      });
+    }
+  }
+
+  return { ...state, clear, run };
+}
+
+function WizardFeedback({ error }: { error?: WizardError }) {
+  return error && <div className="notice err" role="alert">
+    {error.message}
+    {!!error.reasons?.length && <ul className="plain">{error.reasons.map((reason, i) => <li key={i}>{reason}</li>)}</ul>}
+  </div>;
+}
+
+function Choose({ label, choices, onChoose }: { label: string; choices: string[]; onChoose: (value: string) => void }) {
+  return <label>{label}
+    <select value="" onChange={(event) => onChoose(event.target.value)}>
+      <option value="" disabled>Choose a value</option>
+      {choices.map((value) => <option key={value}>{value}</option>)}
+    </select>
+  </label>;
+}
 
 function initialFields(p?: Playbook) {
   return {
@@ -23,7 +72,7 @@ function initialFields(p?: Playbook) {
     dimensionField: p?.events.dimension_field ?? "", identityField: p?.events.identity_field ?? "",
     outcomeField: p?.events.outcome_field ?? "", amountField: p?.events.amount_field ?? "",
     filters: jsonText(p?.events.canary_filter), healthErrors: p?.health?.errors ?? "", healthTotal: p?.health?.total ?? "",
-    method: p?.recovery.method ?? "split", steps: p?.recovery.steps.join(", ") ?? "",
+    steps: p?.recovery.steps.join(", ") ?? "",
     samples: String(p?.recovery.guardrail.min_samples ?? ""), errorRate: String(p?.recovery.guardrail.max_error_rate ?? ""),
     consecutive: String(p?.recovery.guardrail.max_consecutive_errors ?? ""),
     window: p?.recovery.guardrail.window ?? "", cooldown: p?.recovery.cooldown_after_rollback ?? "",
@@ -69,7 +118,7 @@ function draftPlaybook(f: Fields, identities: Record<string, string>): Omit<Play
     },
     segments: { fallback: f.fallbackSegment.trim(), recovery: f.recoverySegment.trim() },
     recovery: {
-      method: f.method === "segments" ? "segments" : "split",
+      method: "split",
       steps: f.steps.split(",").map(Number),
       guardrail: {
         min_samples: Number(f.samples), max_error_rate: Number(f.errorRate),
@@ -103,18 +152,36 @@ export default function PlaybookWizard({ playbook, onCancel, onSave }: {
   const [identities, setIdentities] = useState(() => playbook?.probe.identities ?? {});
   const [stage, setStage] = useState(0);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<{ message: string; reasons?: string[] }>();
+  const [error, setError] = useState<WizardError>();
+  const [search, setSearch] = useState("");
+  const [probeValue, setProbeValue] = useState("");
   const heading = useRef<HTMLHeadingElement>(null);
   const review = stage === stages.length - 1;
+  const flags = useWizardRequest<{ flags: string[] }>("flags");
+  const labelValues = useWizardRequest<{ values: string[] }>("label-values");
+  const eventFields = useWizardRequest<{ fields: string[] }>("event-fields");
+  const readiness = useWizardRequest<Readiness>("readiness");
+  const probe = useWizardRequest<ProbeResult>("probe");
 
   useEffect(() => { heading.current?.focus(); }, [stage]);
+
+  function draftChanged() {
+    setError(undefined);
+    readiness.clear();
+    probe.clear();
+  }
+
+  function changeField(name: keyof Fields, value: string) {
+    draftChanged();
+    if (name === "label") labelValues.clear();
+    setFields((draft) => ({ ...draft, [name]: value }));
+  }
 
   function bind(name: keyof Fields) {
     return {
       value: fields[name],
       onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-        const { value } = event.target;
-        setFields((draft) => ({ ...draft, [name]: value }));
+        changeField(name, event.target.value);
       },
     };
   }
@@ -137,23 +204,26 @@ export default function PlaybookWizard({ playbook, onCancel, onSave }: {
     );
   }
 
+  function readDraft() {
+    setError(undefined);
+    try {
+      return draftPlaybook(fields, identities);
+    } catch (error) {
+      setError({ message: (error as Error).message });
+    }
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (saving) return;
+    if (saving || probe.pending || readiness.pending) return;
     setError(undefined);
     if (!review) {
       setStage(stage + 1);
       return;
     }
 
-    let draft;
-    try {
-      draft = draftPlaybook(fields, identities);
-    } catch (error) {
-      setError({ message: (error as Error).message });
-      return;
-    }
-
+    const draft = readDraft();
+    if (!draft) return;
     setSaving(true);
     const result = await post(
       playbook ? `playbooks/${encodeURIComponent(playbook.id)}` : "playbooks",
@@ -172,7 +242,10 @@ export default function PlaybookWizard({ playbook, onCancel, onSave }: {
     }
   }
 
-  const values = lines(fields.values);
+  const values = [...new Set(lines(fields.values))];
+  const availableValues = labelValues.data?.values.filter((value) => !values.includes(value)) ?? [];
+  const selectedProbe = values.includes(probeValue) ? probeValue : "";
+  const observed = eventFields.data?.fields ?? [];
   return (
     <section className="card playbook-wizard" aria-labelledby="wizard-title">
       <div className="cardhead">
@@ -195,12 +268,48 @@ export default function PlaybookWizard({ playbook, onCancel, onSave }: {
             {select("cause", "Cause", { external: "External", internal: "Internal" })}
           </>}
           {stage === 1 && <>
-            <p className="banner wizard-wide">Live Flagsmith flags and Prometheus label values are unavailable in this wizard. Enter existing names and values.</p>
             {input("dimension", "Dimension name")}
             {input("trait", "Flagsmith trait")}
-            {input("label", "Prometheus label")}
-            {input("flag", "Flagsmith flag key")}
-            <div className="wizard-wide">{area("values", "Dimension values (one per line)", { rows: 2 })}</div>
+            <div className="wizard-source">
+              {input("label", "Prometheus label")}
+              <div className="wizard-lookup">
+                <button type="button" disabled={labelValues.pending || !fields.label.trim()}
+                  onClick={() => void labelValues.run({ label: fields.label.trim() })}>
+                  {labelValues.pending ? "Loading…" : "Find label values"}
+                </button>
+                <WizardFeedback error={labelValues.error} />
+                {labelValues.data && (availableValues.length ? <Choose
+                  label="Add Prometheus label value" choices={availableValues}
+                  onChoose={(value) => changeField("values", [...lines(fields.values), value].join("\n"))}
+                /> : <p className="muted" role="status">
+                  {labelValues.data.values.length ? "All returned values are included." : "No label values found. Enter values below."}
+                </p>)}
+              </div>
+              {area("values", "Dimension values (one per line)", { rows: 2 })}
+            </div>
+            <div className="wizard-source">
+              {input("flag", "Flagsmith flag key")}
+              <div className="wizard-lookup">
+                <label>Flag search term
+                  <input value={search} onChange={(event) => {
+                    setSearch(event.target.value);
+                    flags.clear();
+                  }} onKeyDown={(event) => {
+                    if (event.key !== "Enter") return;
+                    event.preventDefault();
+                    if (search.trim() && !flags.pending) void flags.run({ search: search.trim() });
+                  }} />
+                </label>
+                <button type="button" disabled={flags.pending || !search.trim()}
+                  onClick={() => void flags.run({ search: search.trim() })}>
+                  {flags.pending ? "Searching…" : "Search Flagsmith flags"}
+                </button>
+                <WizardFeedback error={flags.error} />
+                {flags.data && (flags.data.flags.length ? <Choose
+                  label="Select Flagsmith flag" choices={flags.data.flags} onChoose={(value) => changeField("flag", value)}
+                /> : <p className="muted" role="status">No matching flags. Enter a key above or try another search.</p>)}
+              </div>
+            </div>
             {input("fallbackSegment", "Fallback segment template", { placeholder: "{value}-fallback" })}
             {input("recoverySegment", "Recovery segment template", { placeholder: "{value}-recovery" })}
             {select("normal", "Normal flag state", { true: "Enabled", false: "Disabled" })}
@@ -209,19 +318,35 @@ export default function PlaybookWizard({ playbook, onCancel, onSave }: {
             {input("fallbackValue", "Fallback flag value (optional JSON)", { required: false, placeholder: '"secondary"' })}
           </>}
           {stage === 2 && <>
-            <p className="banner wizard-wide">Observed event fields are unavailable in the wizard. Enter field names from your order events.</p>
-            {input("dimensionField", "Dimension event field")}
-            {input("identityField", "Identity event field")}
-            {input("outcomeField", "Outcome event field")}
-            {input("amountField", "Amount event field (optional)", { required: false })}
+            <div className="wizard-lookup wizard-wide">
+              <button type="button" disabled={eventFields.pending} onClick={() => void eventFields.run({})}>
+                {eventFields.pending ? "Loading…" : "Find observed event fields"}
+              </button>
+              <WizardFeedback error={eventFields.error} />
+              {eventFields.data && !observed.length && <p className="muted" role="status">No recent event fields. Enter field names below.</p>}
+            </div>
+            {([
+              ["dimensionField", "Dimension event field"],
+              ["identityField", "Identity event field"],
+              ["outcomeField", "Outcome event field"],
+              ["amountField", "Amount event field (optional)"],
+            ] as const).map(([name, label]) => (
+              <div className="wizard-source" key={name}>
+                {input(name, label, { required: name !== "amountField" })}
+                {observed.length > 0 && <Choose label={`Select observed ${label.toLowerCase()}`}
+                  choices={observed} onChoose={(value) => changeField(name, value)} />}
+              </div>
+            ))}
             <div className="wizard-wide">{area("filters", "Canary filter (optional JSON object)", { required: false })}</div>
             {area("healthErrors", "PromQL errors query (optional)", { required: Boolean(fields.healthTotal.trim()) })}
             {area("healthTotal", "PromQL total query (optional)", { required: Boolean(fields.healthErrors.trim()) })}
           </>}
           {stage === 3 && <>
-            {select("method", "Recovery method", { split: "Percentage split", segments: "Pre-made segments" })}
-            {input("steps", "Step percentages (comma-separated)", { placeholder: "5, 10, 50, 100" })}
-            <p className="muted wizard-wide">Use increasing percentages. Start at 10% or less and finish at 100%.</p>
+            {playbook?.recovery.method === "segments" && <p className="banner wizard-wide">
+              This playbook uses pre-made segments. Saving it changes recovery to percentage split.
+            </p>}
+            <div className="wizard-wide">{input("steps", "Step percentages (comma-separated)", { placeholder: "5, 10, 50, 100" })}</div>
+            <p className="muted wizard-wide">Percentage split starts at 10% or less, increases at each step, and finishes at 100%.</p>
             {input("samples", "Minimum samples", { type: "number", min: 10 })}
             {input("errorRate", "Maximum error rate (fraction)", { type: "number", min: 0, max: 0.2, step: "any" })}
             {input("consecutive", "Maximum consecutive errors", { type: "number", min: 1 })}
@@ -229,13 +354,16 @@ export default function PlaybookWizard({ playbook, onCancel, onSave }: {
             {input("cooldown", "Cooldown after rollback", { pattern: duration, placeholder: "60s" })}
           </>}
           {stage === 4 && <>
-            <p className="banner wizard-wide">The controller has no test probe for drafts. The save API requires <code>POST {probeUrl}</code>.</p>
+            <p className="muted wizard-wide">The probe uses <code>POST {probeUrl}</code>.</p>
             {input("every", "Probe interval", { pattern: duration, placeholder: "10s" })}
             {input("healthyFor", "Required healthy duration", { pattern: duration, placeholder: "60s" })}
             {values.map((value, i) => (
               <label key={i}>Probe identity for {value}
-                <input required value={Object.hasOwn(identities, value) ? identities[value] : ""} onChange={(e) =>
-                  setIdentities({ ...identities, [value]: e.target.value })} />
+                <input required value={Object.hasOwn(identities, value) ? identities[value] : ""} onChange={(event) => {
+                  draftChanged();
+                  const identity = event.target.value;
+                  setIdentities((current) => ({ ...current, [value]: identity }));
+                }} />
               </label>
             ))}
             {input("requestMethod", "Request method", { placeholder: "POST" })}
@@ -243,6 +371,32 @@ export default function PlaybookWizard({ playbook, onCancel, onSave }: {
             <div className="wizard-wide">{area("body", "Request body (optional JSON)", { required: false })}</div>
             {input("healthyStatus", "Expected healthy status", { type: "number", min: 100, max: 599 })}
             {input("fallbackStatus", "Expected fallback status", { type: "number", min: 100, max: 599 })}
+            <div className="wizard-lookup wizard-wide">
+              <p className="muted" id="test-probe-help">Send one synthetic shop order for the selected cohort. The draft stays unsaved.</p>
+              <div className="row wizard-probe-row">
+                <label>Test cohort
+                  <select value={selectedProbe} aria-describedby="test-probe-help" onChange={(event) => {
+                    setProbeValue(event.target.value);
+                    probe.clear();
+                  }}>
+                    <option value="">Choose a cohort</option>
+                    {values.map((value) => <option key={value}>{value}</option>)}
+                  </select>
+                </label>
+                <button type="button" disabled={probe.pending || !selectedProbe}
+                  onClick={(event) => {
+                    if (!event.currentTarget.form?.reportValidity()) return;
+                    const draft = readDraft();
+                    if (draft) void probe.run({ playbook: draft, value: selectedProbe });
+                  }}>{probe.pending ? "Sending…" : "Send test probe"}</button>
+              </div>
+              <WizardFeedback error={probe.error} />
+              {probe.data && <div className="wizard-result" role="status">
+                <Pill kind={probe.data.healthy ? "ok" : "bad"}>{probe.data.healthy ? "Healthy" : "Unhealthy"}</Pill>
+                {probe.data.status != null && <span>HTTP {probe.data.status}</span>}
+                {probe.data.error && <span>{probe.data.error}</span>}
+              </div>}
+            </div>
           </>}
           {review && <>
             <dl className="kv wizard-wide">
@@ -253,17 +407,25 @@ export default function PlaybookWizard({ playbook, onCancel, onSave }: {
               <dt>Flag</dt><dd><code>{fields.flag}</code></dd>
               <dt>Recovery steps</dt><dd>{fields.steps}</dd>
             </dl>
-            <p className="banner wizard-wide">Draft readiness preview is unavailable. Run the readiness check from the saved playbook.</p>
+            <div className="wizard-lookup wizard-wide">
+              <button type="button" disabled={saving || readiness.pending} onClick={() => {
+                const draft = readDraft();
+                if (draft) void readiness.run(draft);
+              }}>{readiness.pending ? "Checking…" : "Preview draft readiness"}</button>
+              <WizardFeedback error={readiness.error} />
+              {readiness.data && <div role="status">
+                <Pill kind={readiness.data.readiness === "ready" ? "ok" : "bad"}>{readiness.data.readiness}</Pill>
+                {!!readiness.data.reasons.length &&
+                  <ul className="plain">{readiness.data.reasons.map((reason, i) => <li key={i}>{reason}</li>)}</ul>}
+              </div>}
+            </div>
           </>}
         </div>
-        {error && <div className="notice err" role="alert">
-          {error.message}
-          {!!error.reasons?.length && <ul className="plain">{error.reasons.map((reason, i) => <li key={i}>{reason}</li>)}</ul>}
-        </div>}
+        <WizardFeedback error={error} />
         <div className="actions wizard-actions">
           <button type="button" disabled={saving} onClick={onCancel}>Cancel</button>
           {stage > 0 && <button type="button" disabled={saving} onClick={() => { setError(undefined); setStage(stage - 1); }}>Back</button>}
-          <button className="primary" type="submit" disabled={saving}>
+          <button className="primary" type="submit" disabled={saving || probe.pending || readiness.pending}>
             {saving ? "Saving…" : review ? (playbook ? "Save changes" : "Create playbook") : "Continue"}
           </button>
         </div>

@@ -11,6 +11,7 @@ const ALLOWED: [string, RegExp][] = [
   ["POST", new RegExp(`^playbooks/${ID}/check$`)],
   ["POST", /^playbooks$/],
   ["PUT", new RegExp(`^playbooks/${ID}$`)],
+  ["POST", /^playbook-wizard\/(flags|label-values|event-fields|readiness|probe)$/],
   ["POST", /^fault$/],
 ];
 

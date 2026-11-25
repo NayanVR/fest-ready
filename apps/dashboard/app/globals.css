@@ -120,6 +120,12 @@ textarea { height: auto; min-height: 72px; padding: 8px 10px; resize: vertical; 
 .wizard-wide { grid-column: 1 / -1; }
 .wizard-fields label { overflow-wrap: anywhere; }
 .wizard-fields dd { min-width: 0; overflow-wrap: anywhere; }
+.wizard-source, .wizard-lookup { display: grid; gap: 8px; align-content: start; min-width: 0; }
+.wizard-lookup { border-top: 1px solid var(--rule); padding-top: 10px; }
+.wizard-lookup > button { justify-self: start; }
+.wizard-probe-row { align-items: end; }
+.wizard-probe-row > label { min-width: min(180px, 100%); }
+.wizard-result { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .wizard-actions { margin-top: 0; }
 .wizard-actions button:first-child { margin-right: auto; }
 @media (max-width: 520px) {
