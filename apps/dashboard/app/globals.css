@@ -278,6 +278,7 @@ ul.plain { margin: 8px 0 0; padding-left: 18px; color: var(--muted); }
 .shell:has(.login) { grid-template-columns: 1fr; }
 .shell:has(.login) .canvas { padding: 0; }
 .login { min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; }
+.login-stack { width: 100%; max-width: 380px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .login .card { width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 16px; padding: 28px; }
 .login .brand { display: flex; align-items: center; gap: 10px; }
 .login .brand b { display: block; font-weight: 500; font-size: 15px; line-height: 18px; }

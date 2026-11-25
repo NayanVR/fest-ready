@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Mascot from "./Mascot";
 
 export default function Login({ next }: { next?: string }) {
   const [mode, setMode] = useState<"login" | "signup">("login");
@@ -30,6 +31,8 @@ export default function Login({ next }: { next?: string }) {
 
   return (
     <div className="login">
+      <div className="login-stack">
+      <Mascot mood={error ? "alert" : "happy"} size={120} />
       <form className="card" onSubmit={submit}>
         <div className="brand">
           <svg width="26" height="26" viewBox="0 0 26 26" fill="none" stroke="#0a0a0a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -55,6 +58,7 @@ export default function Login({ next }: { next?: string }) {
         {error && <div className="err" role="alert">{error}</div>}
         <button className="primary" type="submit" disabled={busy}>{busy ? "Please wait…" : signup ? "Create account" : "Log in"}</button>
       </form>
+      </div>
     </div>
   );
 }
