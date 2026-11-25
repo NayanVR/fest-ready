@@ -44,7 +44,7 @@ test("calls only after fallback is actionable and records one attempt across a c
   const path = join(tmp, "controller.db");
   let db = openDb(path);
   try {
-    const { n, calls, send, playbook } = setup(db, "INVESTIGATING");
+    const { n, calls, send } = setup(db, "INVESTIGATING");
     await approvalCallTick(db, () => start, send);
     db.run("UPDATE incidents SET state = 'FINDINGS' WHERE n = ?", [n]);
     await approvalCallTick(db, () => start + minute, null); // integration unavailable, but the wait starts
@@ -55,7 +55,7 @@ test("calls only after fallback is actionable and records one attempt across a c
     db = openDb(path);
     await approvalCallTick(db, () => start + 3 * minute, send);
     expect(calls).toEqual([{
-      phoneNumber: contact.phone_number, language: contact.language, incidentId: "INC-0001", alert: playbook.match.alerts[0], action: "fallback",
+      phoneNumber: contact.phone_number, language: contact.language, incidentId: "INC-0001", action: "fallback",
     }]);
     expect(auditRows(db, "INC-0001")).toMatchObject([{ action: "approval call accepted (fallback)", result: "ok" }]);
     expect(JSON.stringify(auditRows(db, "INC-0001"))).not.toContain(contact.phone_number);

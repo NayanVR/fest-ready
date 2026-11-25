@@ -53,7 +53,7 @@ export async function approvalCallTick(
       const claimed = db.query(`UPDATE approval_call_waits SET claimed = 1
         WHERE incident = ? AND claimed = 0 AND pending_since <= ? RETURNING incident`).get(n, now - config.delay_minutes * 60_000);
       if (!claimed) return null;
-      return { phoneNumber: config.phone_number, language: config.language, incidentId: incidentId(n), alert: row.alert, action };
+      return { phoneNumber: config.phone_number, language: config.language, incidentId: incidentId(n), action };
     }).immediate());
 
     if (!call || !send) continue;

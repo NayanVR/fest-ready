@@ -9,7 +9,6 @@ export type ApprovalCallInput = {
   phoneNumber: string;
   language: SarvamVoiceLanguage;
   incidentId: string;
-  alert: string;
   action: ApprovalAction;
 };
 
@@ -108,8 +107,6 @@ export async function placeApprovalCall(
   }
   const copy = callCopy[language];
   const message = copy.message.replace("{incident}", incidentId).replace("{action}", copy.actions[action]);
-  const alertName = typeof input.alert === "string" && /^[A-Za-z0-9_][A-Za-z0-9_.:-]{0,79}$/.test(input.alert)
-    ? input.alert : undefined;
   const url = `https://apps.sarvam.ai/api/outbounds/v1/orgs/${config.orgId}/workspaces/${config.workspaceId}/outbounds`;
   let response: Response;
   try {
@@ -121,7 +118,7 @@ export async function placeApprovalCall(
           app_id: config.appId,
           app_version: config.appVersion,
           connection_config: { connection_id: config.connectionId, agent_phone_number: config.fromNumber },
-          agent_variables: { incident_id: incidentId, alert_name: alertName, pending_action: action },
+          agent_variables: { incident_id: incidentId },
           app_overrides: { initial_language_name: language, initial_bot_message: message },
         },
         user_config: { user_phone_number: phoneNumber },

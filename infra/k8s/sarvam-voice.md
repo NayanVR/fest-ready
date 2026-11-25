@@ -4,7 +4,7 @@ The controller places an outbound reminder when an enabled playbook has an actio
 
 ## Sarvam workspace setup
 
-Publish an outbound agent in Sarvam Voice Agents and attach an outbound-capable caller number. Enable the languages the operators will select. Configure the agent to deliver the approval reminder, direct the recipient to FestReady, and end the call. Give the agent no incident-changing tools.
+Publish an outbound agent in Sarvam Voice Agents and attach an outbound-capable caller number. Enable the languages the operators will select and declare the `incident_id` input variable. The controller supplies the pending action in the opening message. Configure the agent to direct the recipient to FestReady and end the call. Give the agent no incident-changing tools.
 
 Set these values in the environment or the repo's ignored `.env`. The Kubernetes secrets script puts them in the `sarvam-voice` Secret consumed by the controller.
 

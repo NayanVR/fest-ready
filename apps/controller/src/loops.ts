@@ -4,6 +4,7 @@
 //   automatically only when the playbook sets recovery.auto_advance; starting recovery from PROBE_OK is always a human.
 // - probe (every tick): while Mitigated, send the playbook's probe request every `probe.every`; FALLBACK → PROBE_OK once
 //   probes have passed for `healthy_for` (checked every tick, not only after a probe), PROBE_OK → FALLBACK on a failure.
+// - approval call (every 5 s): call once when an operator decision stays pending past the playbook's delay.
 import type { Database } from "bun:sqlite";
 import { approvalCallTick } from "./approval-calls.ts";
 import { warm } from "./flagsmith.ts";
