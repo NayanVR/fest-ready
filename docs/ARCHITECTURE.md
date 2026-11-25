@@ -6,7 +6,7 @@
 > **Status:** Built and rehearsed end to end on 24 Nov (results in §15 and [`RUNBOOK.md`](RUNBOOK.md)). **All code is rebuilt from scratch on 25 Nov** in a new project from these docs (non-markdown setup files: [`FILES.md`](FILES.md)); Flagsmith, NudgeBee and Sarvam setup are kept. Items still marked **[VERIFY]** have not been run for real.
 > **Companion docs:** [`CONTRACTS.md`](CONTRACTS.md) (interfaces both people code against) · [`WORK.md`](WORK.md) (who builds what, and when)
 > **Owners:** Yashasvi (Person A: services + cluster + NudgeBee/Sarvam, Codex) · Nayan (Person B: controller + dashboard + Flagsmith, Claude Code)
-> **Last change (24 Nov, v2):** the fault is now a third-party provider outage (three providers, one per city), and courier-service is merged into shop-api. NuBi's findings reach the controller over MCP and are required before anything can be approved. Playbooks use a general format stored in the controller database and editable from the UI. Added a provider probe, business impact and an evidence pack. New alert `DeliveryAvailabilityLow`. Product framing is in §1.1.
+> **Feature branch update (25 Nov, `demo/payment-failover`):** added an isolated payment-failover simulation, separate delivery and payment availability, and live discovery in the playbook wizard. See §4.1, §9.5 and §15.
 
 ---
 
@@ -22,15 +22,15 @@ NudgeBee can diagnose, and Flagsmith can switch a code path for a segment. Neith
 
 1. **A playbook catalog, which is the contract between the AI and production.** NuBi can only choose from fallbacks the business has approved in advance. The controller validates every proposal, and the AI never touches Flagsmith directly.
 2. **A limited blast radius.** Only the affected segment moves to the fallback.
-3. **A guarded way back.** Exposure goes 5 → 10 → 50 → 100, and each step is checked against real business results. Advancing needs a human; rollback is automatic.
+3. **A guarded way back.** Exposure goes 5 → 10 → 50 → 100 in the demo. An operator starts recovery, each step is checked against event data, and rollback is automatic. The playbook controls whether advancing each step needs another operator click.
 4. **Business context the AI doesn't have.** The controller sees individual orders and customers, so it can show orders and money lost and saved, detect on its own that the provider has recovered, and produce an evidence pack for the vendor.
-5. **Readiness.** Playbooks are checked against Flagsmith and Prometheus all the time, so a broken fallback shows up before the rush instead of during it.
+5. **Readiness.** The dashboard checks playbooks against Flagsmith and recent events so a missing flag, segment or cohort signal is visible before an incident.
 
 **Pitch:** _"NuBi tells you why. The controller takes the safe action and brings customers back gradually."_
 
 ---
 
-## 2. Demo scenario (the one story we build)
+## 2. Delivery demo scenario
 
 **Business:** a fictional home-decor store with two ways to receive an order: **home delivery** and **in-store pickup**. It operates in **Bengaluru, Mumbai and Delhi**. Each city uses a different courier provider: **a** (Bengaluru), **b** (Mumbai) and **c** (Delhi).
 
@@ -42,8 +42,8 @@ NudgeBee can diagnose, and Flagsmith can switch a code path for a segment. Neith
 | 4. Investigate             | `DeliveryAvailabilityLow` fires (no city or provider label). Ticket INC-xxxx opens as **Investigating** with **no recommendation**       | Controller: "availability 67%; waiting for findings". NuBi investigates                                                    |
 | 5. Findings                | NuBi calls `submit_findings` over MCP: playbook `city-delivery-fallback`, value `mumbai`, cause `external`                               | Incident page shows NuBi's own summary, the validated playbook and an **Approve** button                                   |
 | 6. Isolate                 | Operator approves → Flagsmith fallback for the Mumbai segment only                                                                       | Mumbai shows **pickup only**; BLR/DEL still offer delivery. The alert resolves. "Orders saved by fallback" starts counting |
-| 7. Provider recovers       | `make outage-clear P=b`. The controller's probe sees provider b healthy for 5 minutes                                                    | "Provider b looks healthy. Start recovery?"                                                                                |
-| 8. Gradual recovery        | Flagsmith % split brings delivery back: **5% → 10% → 50% → 100%**. Each step needs a passing guardrail, then the operator clicks Advance | Mumbai delivery share rises in steps                                                                                       |
+| 7. Provider recovers       | `make outage-clear P=b`. The controller's probe sees provider b healthy for the configured duration (60 seconds in the seed)               | "Provider b looks healthy. Start recovery?"                                                                                |
+| 8. Gradual recovery        | The operator starts recovery. The delivery seed advances **5% → 10% → 50% → 100%** as each guardrail passes.                                 | Mumbai delivery share rises in steps                                                                                       |
 | 9. (Wow moment) Regression | Outage injected again during the 10% step                                                                                                | Controller detects the breach and sets the split to 0% automatically. The same ticket goes back to Mitigated               |
 | 10. Close                  | Recover to 100%, export the provider evidence pack, close with a note                                                                    | Time to mitigate, time to recover, orders and ₹ saved                                                                      |
 
@@ -66,12 +66,11 @@ NudgeBee can diagnose, and Flagsmith can switch a code path for a segment. Neith
 - Incidents tracked as tickets with a lifecycle and their own page (§9.4).
 - General playbook format, **stored in the controller's SQLite database** and seeded from a YAML file (§9.3).
 - Provider probe, business impact and provider evidence pack (§9.6).
-- A dashboard: storefront, ops console, playbooks, audit.
+- A dashboard with storefront, ops console, playbook creation and editing, readiness, and audit (§9.5).
+- On `demo/payment-failover`, an isolated payment simulation that uses the same controller and playbook engine (§4.1).
 
 ### Stretch (P2)
 
-- **Playbook editor UI** (a form wizard over the playbook API, §9.5).
-- Playbook readiness checks shown as Ready or Broken (§9.5).
 - Sarvam-written win-back messages to affected customers in their language, sent only to the affected segment.
 - Readiness drill: run the whole scenario against a separate Flagsmith environment, grade NuBi's diagnosis against the injected fault, and issue a pass/fail scorecard.
 
@@ -127,12 +126,24 @@ flowchart LR
     CTRL -->|Admin API| FS
     CTRL -->|probe orders| SHOP
     CTRL -->|demo outage button| PM
-    CTRL -. PromQL, optional .-> PROM
+    CTRL -. optional wizard discovery .-> PROM
     DASH -->|poll every 2 s| CTRL
     DASH -->|storefront| SHOP
 ```
 
 **Ownership:** Yashasvi builds `shop-api`, `partner-mock`, `load-generator`, the cluster, monitoring, and the NudgeBee/Sarvam setup. Nayan builds the `controller`, the `dashboard`, and the Flagsmith setup. Interfaces are in [`CONTRACTS.md`](CONTRACTS.md).
+
+### 4.1 Isolated payment failover
+
+[`infra/payment-demo/compose.yaml`](../infra/payment-demo/compose.yaml) runs the dashboard, shop-api, controller, courier mock, and `payment-demo` fixture on a private Compose network. Only the dashboard is published on loopback at `127.0.0.1:3100` by default. The stack starts with an empty playbook store and uses local simulator keys. It exercises the controller without changing the rehearsal cluster or using hosted Flagsmith, NudgeBee, or real payment accounts.
+
+1. **Normal routing.** On `/payments`, the operator submits a synthetic payment with a preferred provider (`alpha`, `beta` or `gamma`). That preference defines the cohort. With `PAYMENT_DEMO_URL` configured, shop-api reads the routing decision from the fixture and attempts the preferred provider while primary routing is enabled.
+2. **Failure and approval.** An authenticated outage switch makes the chosen mock return `503 PROVIDER_UNAVAILABLE`. A failed primary attempt by a non-probe customer emits a throttled, simulated `PaymentAvailabilityLow` alert to the controller. The operator submits findings marked `source: operator` and approves the cohort-specific change. The fixture serves the Flagsmith Admin API paths the controller already uses, via `FLAGSMITH_ADMIN_URL`, so the same write and read-back code exercises `payment_primary_enabled` and the `payment-{value}-fallback` / `payment-{value}-recovery` segments.
+3. **Fallback and recovery.** Only the approved cohort moves to backups. Shop-api orders the other providers deterministically per customer and tries another only after an explicit `503 PROVIDER_UNAVAILABLE`. An ambiguous response or timeout ends the attempt. The `pay-probe-{value}` identity always reaches its matching primary. The payment playbook requires operator advancement (`auto_advance: false`) and its guardrail counts primary payment events for the affected cohort. A canary breach or renewed firing alert can roll the split back automatically.
+
+Shop-api posts payment events to the existing `/internal/orders` ingestion route. The playbook maps `paymentCohort`, `paymentCustomer`, `paymentOutcome`, and `paymentRoute` into the shared engine. Overview reports five-minute availability by configured playbook dimension. Delivery counts eligible delivery attempts, while payments count primary and fallback attempts so a successful backup contributes to payment availability. Both exclude the playbook's reserved probes.
+
+Run the sandbox with `make payment-demo-up`, exercise it in a disposable project with `make payment-demo-smoke`, and stop it with `make payment-demo-down`.
 
 ---
 
@@ -176,8 +187,8 @@ A **generic engine**. It knows nothing about cities, couriers or this store; eve
   - The Flagsmith Admin API (server-side token only).
   - shop-api, for probe orders.
   - partner-mock, for the demo outage button.
-  - Optionally Prometheus.
-- **Runs two loops:** the guardrail loop, which handles automatic rollback, and the provider probe loop, which detects recovery.
+  - Optionally Prometheus for wizard discovery.
+- **Runs two loops:** the guardrail loop handles automatic rollback and opted-in step advancement after recovery starts. The provider probe loop detects when recovery can start.
 
 ### 5.5 `dashboard` (Next.js)
 
@@ -186,15 +197,16 @@ A **generic engine**. It knows nothing about cities, couriers or this store; eve
 - **Charts:** simple CSS bars. For real metric graphs, link out to Grafana.
 - **Names come from the playbook**, not from hard-coded text.
 - **Pages:**
-  - **Overview:** overall delivery availability, incident list, playbook readiness. **No per-city breakdown** before findings exist.
+  - **Overview:** separate availability by playbook dimension, the incident list, and playbook readiness. No per-cohort breakdown before findings exist.
   - **Incident page** `/incidents/INC-xxxx`:
     - status, a link to the NuBi investigation, and NuBi's summary (verbatim);
     - the validated playbook with **Approve**, and the findings form (safety net);
     - the recovery panel: split %, observed share, samples, guardrail result, **Advance** (enabled only when the guardrail passes) and **Rollback**;
     - business impact, the provider probe, the timeline, evidence export, and **Close** (requires a note).
-  - **Playbooks:** list with Ready/Broken; create and edit (P2 wizard).
+  - **Playbooks:** list with Ready/Broken status and a wizard to create from scratch, start from a generic template, or edit a saved playbook.
   - **Storefront:** pick a demo customer from a fixed list of IDs per city, see the options, place an order.
   - **Demo controls:** start or clear a provider outage (requires auth).
+  - **Payment simulation:** run synthetic payments and simulate mock-provider outages when enabled (§4.1).
   - **Audit log.**
 
 A clickable mockup was shared separately (`portal-mockup.html`). It's a reference, not code.
@@ -368,20 +380,20 @@ stateDiagram-v2
     PROBE_OK --> FALLBACK: probe fails again
 ```
 
-Steps come from the playbook; 5/10/50/100 is the demo playbook.
+Steps come from the playbook. The diagram shows manual advancement, which the payment simulation uses. The delivery seed opts into automatic advancement after the operator starts recovery.
 
 ### 9.2 Guardrails (demo values, not production SLOs)
 
-- **Canary cohort:** events for the affected value that match the playbook's `canary_filter` (here, delivery orders) while recovery is active.
-- **Minimum sample:** `min_samples` per step (demo: 20). Below that, wait. Never advance on too little data.
+- **Canary cohort:** events for the affected value that match the playbook's `canary_filter` while recovery is active. Reserved probe events are excluded.
+- **Minimum sample:** `min_samples` per step, set to 10 in the demo. Below that, wait.
 - **Breach:** error rate above `max_error_rate` (5%), OR `max_consecutive_errors` (3) errors in a row.
-- **Observation window:** `window` (60 s) per step, with `cooldown_after_rollback` after a rollback.
-- **Rollback is automatic; advancing is operator-gated.** Advance is enabled only after the minimum sample is reached and the guardrail passes. The controller never advances on its own. UI and pitch say: "advance: operator · rollback: automatic".
-- Every action is idempotent and audited (actor, before/after flag state, result). After each change, read the flag back and run one probe order to confirm.
+- **Observation window:** `window` is 20 s per demo step, with `cooldown_after_rollback` set to 60 s.
+- **Rollback and advance.** The controller rolls back on a breach. Starting recovery always requires the operator. The guardrail must pass at each step. Then the operator advances unless the playbook sets `recovery.auto_advance: true`.
+- Flag writes include a read-back. The audit records the actor, before and after state, and result.
 
 ### 9.3 Playbook format
 
-Playbooks are stored in the controller's SQLite database. On first start with an empty database, the controller imports `apps/controller/playbooks/*.yaml` as seed data, so the demo setup can be reproduced. After that, the database is the source of truth and playbooks are created and edited through the API (and the P2 wizard). The full schema and validation rules are in `CONTRACTS.md` §8.
+Playbooks are stored in the controller's SQLite database. On first start with an empty database, the controller imports YAML from `PLAYBOOK_DIR`, which defaults to `apps/controller/playbooks/` in the project layout. After that, the database is the source of truth and playbooks are created and edited through the API and wizard. The base schema and validation rules are in `CONTRACTS.md` §8.
 
 ```yaml
 id: city-delivery-fallback
@@ -401,6 +413,7 @@ segments: { fallback: "{value}-fallback", recovery: "{value}-recovery" }
 recovery:
   method: split
   steps: [5, 10, 50, 100]
+  auto_advance: true
   guardrail:
     {
       min_samples: 10,
@@ -432,12 +445,12 @@ probe:
   expect: { healthy: { status: 201 }, fallback_active: { status: 409 } }
 ```
 
-**Why it's general:** the only placeholders are `{value}` and `{probe_identity}`. Flag, segment, metric and event-field names all come from the playbook. A payments business would use the same engine with `dimension: bank`, `flag: upi_provider` and `fallback: { enabled: true, value: secondary }` (pitch example only, not built).
+Flag, segment, metric, and event-field names come from the playbook. The payment simulation uses the same engine with the preferred provider as the dimension and a boolean flag that enables primary routing (§4.1). Playbooks can use `{value}` and `{probe_identity}`. The API restricts network-bound templates to the configured shop probe endpoints (§9.5).
 
 **Platform safety rules no playbook can change:**
 
-- The initial fallback always needs human approval.
-- Advance always needs a human click.
+- Initial fallback and the start of recovery require operator approval.
+- Later steps require a passing guardrail regardless of the advancement setting.
 - Rollback is always automatic.
 - `min_samples` ≥ 10.
 - Steps must increase, end at 100, and start at ≤ 10.
@@ -459,22 +472,17 @@ Each incident is a ticket with an ID, an owner and **its own page** (`/incidents
 - **Deduplication:** the alert maps to the open incident. A regression **reopens the same ticket** (Recovering → Mitigated); it never creates a second one.
 - **Numbers per ticket:** time to mitigate, time to recover, orders failed, orders saved by the fallback, ₹ at risk per minute, customers affected.
 
-### 9.5 Playbook management (API in scope; UI wizard is P2)
+### 9.5 Playbook management and discovery
 
 - **API:** list, read, create, update, and run a readiness check (CONTRACTS.md §3.4). Every write is validated (§9.3 safety rules, schema) and audited.
 - **Readiness check** (the Ready / Broken badge):
   - the flag exists in Flagsmith;
   - both segments exist for every value;
-  - events or the health query return data for every value;
+  - recent non-probe events include every configured value;
   - no value seen in the data is missing from `dimension.values` (e.g. `city="pune"` appears).
-- **Wizard (P2):** a step-by-step form whose fields are picked from live data, not typed:
-  - flags from the Flagsmith Admin API;
-  - label values from Prometheus;
-  - event fields from recent events;
-  - a "send test probe" button;
-  - a dry-run readiness check before saving.
-
-  "Create missing segments" through the Admin API is pitch-only.
+- **Wizard.** Start with a blank draft or a generic template to pause a route or enable a fallback route. The owner defaults to the signed-in user. The wizard can derive an ID from a selected alert, add discovered cohort values, fill matching segment templates, and prefill editable recovery and probe settings.
+- **Discovery.** The authenticated catalog combines Flagsmith flag keys and segment names, recent Prometheus metric and label names, configured and observed alert names, and field names from recent events. Selecting a Prometheus label loads recent values, optionally narrowed to a metric. Suggestions remain editable, and manual entry works when an upstream is unavailable. The helper returns event field names only.
+- **Before saving.** The operator can run a synthetic test probe and preview readiness. API-managed probes can POST only to the configured `SHOP_URL` order or payment path, with redirects rejected and no environment expansion in the body. Probe identities are supplied by the operator. Optional PromQL selectors can be authored and saved in the wizard. Runtime readiness and guardrails use events.
 
 ### 9.6 Business features (the controller sees orders, not just systems)
 
@@ -497,7 +505,7 @@ Each incident is a ticket with an ID, an owner and **its own page** (`/incidents
 | Provider fixed           | `make outage-clear P=b`                                                                     | Probe goes healthy; Mumbai 200s again for canary customers |
 | Regression during canary | `make outage P=b` again                                                                     | Canary breach → automatic rollback                         |
 
-Fault controls are demo-only, require the admin secret, and only touch partner-mock.
+Delivery fault controls target `partner-mock`. The isolated payment outage control targets `payment-demo`. Both use server-side admin authentication.
 
 ---
 
@@ -542,10 +550,12 @@ repo/
     shop-api/
     partner-mock/
     load-generator/
+    payment-demo/     # local payment provider and Flagsmith-compatible fixture
   infra/
     kind/             # cluster config (extraPortMappings)
     k8s/              # deployments, services, namespaces, secrets templates
     monitoring/       # helm values, ServiceMonitors, PrometheusRule, Alertmanager routes
+    payment-demo/     # isolated Compose stack and smoke test
     nudgebee/         # tunnels.sh, install-agents.sh, sarvam-shim.yaml, nubi-config.md, automation.json (created verbatim from docs/FILES.md)
   docs/
     ARCHITECTURE.md
@@ -613,14 +623,18 @@ Who does which check is in [`WORK.md`](WORK.md).
 - **Implemented and verified:** works end to end, with evidence.
 - **Implemented with simulated input:** the fault is injected; the platform actions are real.
 - **Partially integrated:** e.g. alert ingestion works but NuBi's tool calls don't.
-- **Proposed:** not shown working (e.g. playbook wizard, readiness drills, payments playbook, multi-tenant).
+- **Proposed:** design or pitch work without a working implementation.
 
-**Status from the 24 Nov rehearsal (re-check each item after the 25 Nov rebuild):**
+**Delivery rehearsal on 24 Nov:**
 
 - _Implemented and verified:_ provider outage → `DeliveryAvailabilityLow` alert → controller incident and NudgeBee event; NudgeBee automation → NuBi (Sarvam) investigates → `submit_findings` over MCP, no human input (~4 min); operator Approve → Flagsmith fallback for Mumbai only; probe; operator-approved canary 5/10/50/100%; automatic rollback on breach (8 s at 50%) and on alert re-fire; cooldown; resolve and close; impact numbers; evidence JSON/CSV; audit of every action with Flagsmith read-back.
 - _Implemented with simulated input:_ the outage itself (partner-mock switch) and all orders (load generator).
-- _Implemented, not yet run for real:_ PromQL health (the controller uses order events), value-type playbooks.
-- _Proposed:_ playbook editing API and wizard (`POST`/`PUT /api/playbooks` not built), readiness drills, Sarvam win-back messages, payments playbook, multi-tenant.
+
+**Feature branch verification on 25 Nov:**
+
+- _Implemented with simulated input on `demo/payment-failover`:_ the isolated payment fixture, synthetic alert, operator findings and approval, cohort-scoped fallback, and a recovered primary probe. The Compose smoke test exercises this path, including an unavailable backup and a healthy unrelated cohort. Controller tests cover payment canary filtering and automatic rollback behavior.
+- _Verified on `demo/payment-failover` against local fixtures:_ separate availability metrics, generic playbook creation, live discovery, synthetic probe, readiness, and save. The wizard flow was exercised in Chrome. Runtime guardrails and readiness use events. PromQL query fields are authorable, and live PromQL health and value-type failover remain unverified.
+- _Proposed:_ readiness drills, Sarvam win-back messages, and multi-tenant operation.
 
 Never present a hand-written diagnosis as NuBi output. Findings entered through the form are labelled `source: operator`. Never call a step "automatic" if a human clicked it.
 
@@ -631,7 +645,7 @@ Never present a hand-written diagnosis as NuBi output. Findings entered through 
 Decided:
 
 1. Local evaluation, ~5 s refresh (§8), pending checks 9 and 11.
-2. Canary advance is operator-gated; rollback is automatic (§9.2).
+2. An operator starts recovery. Each later step advances manually unless the playbook opts into automatic advancement. Rollback is automatic (§9.2).
 3. A separate page per incident (§9.4).
 4. Yashasvi = A (business + cluster), Nayan = B (control side) ([`WORK.md`](WORK.md)).
 5. The whole project is built on 24 Nov; the event day is for running, polishing, recording and pitching ([`WORK.md`](WORK.md)).
@@ -639,12 +653,11 @@ Decided:
 7. courier-service is merged into shop-api (§5.1).
 8. NuBi findings come over MCP; the controller doesn't diagnose; Approve requires findings (§7.2, §7.3).
 9. Recovery edits N on one recovery segment (§8).
-10. Playbooks live in the controller database, seeded from YAML (§9.3).
+10. Playbooks live in the controller database. The delivery cluster starts from a YAML seed and the payment sandbox starts with an empty catalog (§4.1, §9.3).
 
 Open:
 
 1. Does the NudgeBee agent proxy reach an in-cluster MCP server, or do we need a tunnel? (check 12)
 2. Can we set a custom instruction for alert-triggered NuBi investigations? (check 12)
-3. Does the playbook wizard (P2) fit in time?
-4. Sarvam win-back messages: build or only describe?
-5. Readiness drills: build, or pitch as the product's direction?
+3. Sarvam win-back messages: build or only describe?
+4. Readiness drills: build, or pitch as the product's direction?
