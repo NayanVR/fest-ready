@@ -30,7 +30,7 @@ export default function Audit({ initial }: { initial: Loaded<AuditRow[]> }) {
               {rows.map((r, i) => (
                 <tr key={i}>
                   <td title={r.ts} style={{ whiteSpace: "nowrap" }}>{fmt(r.ts)}</td>
-                  <td className="id">{r.incidentId ?? "–"}</td>
+                  <td className="id" style={{ whiteSpace: "nowrap" }}>{r.incidentId ?? "–"}</td>
                   <td>{r.actor}</td>
                   <td>{r.action}</td>
                   <td>

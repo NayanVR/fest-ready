@@ -1,12 +1,16 @@
 "use client";
 import { useState } from "react";
 import { Banner, Bar, Btn, Loaded, Notice, Pill, clock, fmt, money, operator, pct, statusKind, useAction, usePoll } from "./ui";
-import type { Incident as Inc, Playbook, PlaybookRow, Recovery } from "@/lib/types";
+import type { Evidence, Incident as Inc, Playbook, PlaybookRow, Recovery } from "@/lib/types";
+
+// healthySince → seconds. `probe.healthyFor` from the controller is the *required* duration (playbook healthy_for), not elapsed.
+const secs = (since: string) => `${Math.max(0, Math.round((Date.now() - Date.parse(since)) / 1000))}s`;
 
 const STEPS = ["Investigating", "Mitigated", "Recovering", "Resolved", "Closed"] as const;
 
 // Why Advance is disabled, using only fields the controller sends (CONTRACTS §3.4).
 function whyNot(rec: Recovery, probe: Inc["probe"]): string {
+  if (rec.reason) return rec.reason[0]!.toUpperCase() + rec.reason.slice(1) + "."; // the controller says why (breach, cooldown, samples…)
   if (rec.state === "NORMAL") return "Recovery is complete.";
   if (rec.state === "FALLBACK")
     return probe?.healthy ? `Provider probe has been healthy for ${probe.healthyFor ?? "–"}; waiting for the playbook's healthy-for time.`
@@ -19,6 +23,7 @@ function whyNot(rec: Recovery, probe: Inc["probe"]): string {
 export default function Incident({ id, initial }: { id: string; initial: Loaded<Inc> }) {
   const { data: inc, error, reload } = usePoll<Inc>(`incidents/${encodeURIComponent(id)}`, initial);
   const { data: pb } = usePoll<Playbook>(inc?.playbook ? `playbooks/${inc.playbook}` : null);
+  const { data: ev } = usePoll<Evidence>(inc?.recovery ? `incidents/${encodeURIComponent(id)}/evidence` : null, undefined, 10000);
   const { busy, note, run } = useAction();
   const [closing, setClosing] = useState("");
 
@@ -39,7 +44,10 @@ export default function Incident({ id, initial }: { id: string; initial: Loaded<
   const fallbackSeg = pb?.segments?.fallback.replace("{value}", inc.value ?? "");
   const steps = pb?.recovery?.steps ?? [];
   const nextStep = rec ? steps.find((s) => s > rec.splitPercent) : undefined;
+  // NORMAL = fallback switched off again: the controller reports split 0, but every customer is back on delivery.
+  const shown = rec?.state === "NORMAL" ? 100 : rec?.splitPercent ?? 0;
   const done = inc.status === "Resolved" || inc.status === "Closed";
+  const lastOk = !!inc.probe?.last?.length && inc.probe.last[inc.probe.last.length - 1]!;
 
   return (
     <>
@@ -121,19 +129,19 @@ export default function Incident({ id, initial }: { id: string; initial: Loaded<
               <div className="cardhead">
                 <h2>Recovery</h2>
                 <Pill>{rec.state}</Pill>
-                <Pill kind={rec.guardrail === "pass" ? "ok" : rec.guardrail === "breach" ? "bad" : "warn"}>guardrail: {rec.guardrail}</Pill>
+                {rec.state !== "NORMAL" && <Pill kind={rec.guardrail === "pass" ? "ok" : rec.guardrail === "breach" ? "bad" : "warn"}>guardrail: {rec.guardrail}</Pill>}
                 <span className="sp" />
                 <span className="muted">advance: operator · rollback: automatic</span>
               </div>
-              <div className="bignum">{rec.splitPercent}%<small>of {inc.value ?? "the value"}'s customers back on delivery · observed {rec.observedSharePercent == null ? "–" : `${rec.observedSharePercent}%`}</small></div>
+              <div className="bignum">{shown}%<small>{rec.state === "NORMAL" ? `of ${inc.value ?? "the value"}'s customers on delivery · fallback is off` : `of ${inc.value ?? "the value"}'s customers back on delivery · observed ${rec.observedSharePercent == null ? "–" : `${rec.observedSharePercent}%`}`}</small></div>
               {steps.length > 0 && (
                 <div className="ladder" aria-label="Recovery steps">
                   {[0, ...steps].map((s) => (
-                    <div key={s} className={`${s > 0 && s <= rec.splitPercent ? "on" : ""} ${s === rec.splitPercent ? "now" : ""}`}>{s}%</div>
+                    <div key={s} className={`${s > 0 && s <= shown ? "on" : ""} ${s === shown ? "now" : ""}`}>{s}%</div>
                   ))}
                 </div>
               )}
-              <div className="metrics">
+              {rec.state !== "NORMAL" && <div className="metrics">
                 <div>
                   <div className="muted">Samples</div>
                   <div>{rec.samples} <span className="muted">of {rec.minSamples} needed</span></div>
@@ -142,17 +150,19 @@ export default function Incident({ id, initial }: { id: string; initial: Loaded<
                 <div>
                   <div className="muted">Error rate</div>
                   <div>{pct(rec.errorRate)} <span className="muted">max {pct(rec.maxErrorRate)}</span></div>
-                  <Bar value={rec.errorRate} max={rec.maxErrorRate} bad={rec.errorRate > rec.maxErrorRate} />
+                  <Bar value={rec.errorRate ?? 0} max={rec.maxErrorRate} bad={(rec.errorRate ?? 0) > rec.maxErrorRate} />
                 </div>
                 <div>
                   <div className="muted">Consecutive errors</div>
                   <div>{rec.consecutiveErrors}</div>
                 </div>
-              </div>
+              </div>}
               <div className="actions">
                 <Btn className="primary" busy={busy} label="Advance" disabled={!rec.advanceAllowed || done}
                   onClick={() => act("Advance", "advance", { actor: operator() })}>
-                  {rec.state === "PROBE_OK" ? `Start recovery at ${steps[0] ?? "first step"}%` : nextStep ? `Advance to ${nextStep}%` : "Advance"}
+                  {rec.state === "NORMAL" ? "Advance"
+                    : rec.state === "PROBE_OK" || rec.state === "FALLBACK" ? `Start recovery at ${steps[0] ?? "first step"}%`
+                    : nextStep ? `Advance to ${nextStep}%` : "Finish recovery (fallback off)"}
                 </Btn>
                 <Btn className="danger" busy={busy} label="Rollback" disabled={rec.splitPercent === 0 || done}
                   onClick={() => act("Rollback", "rollback", { actor: operator() })}>Rollback to 0%</Btn>
@@ -195,8 +205,13 @@ export default function Incident({ id, initial }: { id: string; initial: Loaded<
             {inc.probe ? (
               <>
                 <div className="row" style={{ marginTop: 8 }}>
-                  <Pill kind={inc.probe.healthy ? "ok" : "bad"}>{inc.probe.healthy ? "healthy" : "unhealthy"}</Pill>
-                  {inc.probe.healthy && <span className="muted">for {inc.probe.healthyFor ?? "–"} · since {clock(inc.probe.healthySince)}</span>}
+                  <Pill kind={inc.probe.healthy ? "ok" : lastOk ? "warn" : "bad"}>{inc.probe.healthy ? "healthy" : lastOk ? "recovering" : "unhealthy"}</Pill>
+                  {inc.probe.healthySince && lastOk && (
+                    <span className="muted" suppressHydrationWarning>
+                      {inc.probe.healthy ? "ok" : "ok so far"} for {secs(inc.probe.healthySince)}
+                      {inc.probe.healthyFor && !inc.probe.healthy ? ` of ${inc.probe.healthyFor} needed` : ""} · since {clock(inc.probe.healthySince)}
+                    </span>
+                  )}
                 </div>
                 <div className="dots" role="img" aria-label={`Last ${(inc.probe.last ?? []).length} probes, oldest first`}>
                   {(inc.probe.last ?? []).map((ok, i) => <span key={i} className={`dot ${ok ? "" : "f"}`} />)}
@@ -209,10 +224,26 @@ export default function Incident({ id, initial }: { id: string; initial: Loaded<
             <section className="card">
               <h2>Provider evidence</h2>
               <p className="muted" style={{ margin: "4px 0 12px" }}>Order events for {inc.value}, for the provider's invoice review.</p>
+              {ev && typeof ev.failedAttempts === "number" && (
+                <dl className="kv" style={{ marginBottom: 12 }}>
+                  <dt>Failed attempts</dt><dd>{ev.failedAttempts}</dd>
+                  <dt>Customers affected</dt><dd>{ev.customersAffected}</dd>
+                  <dt>By outcome</dt><dd>{Object.entries(ev.byOutcome ?? {}).map(([k, n]) => `${k} ${n}`).join(" · ") || "–"}</dd>
+                  <dt>Window</dt><dd>{clock(ev.from)}–{clock(ev.to)}</dd>
+                </dl>
+              )}
               <div className="row">
                 <a className="btn" href={`/api/c/incidents/${id}/evidence`} download={`${id}-evidence.json`}>Download JSON</a>
                 <a className="btn" href={`/api/c/incidents/${id}/evidence?format=csv`} download={`${id}-evidence.csv`}>Download CSV</a>
               </div>
+            </section>
+          )}
+
+          {inc.status === "Closed" && (
+            <section className="card">
+              <h2>Closed</h2>
+              <p style={{ marginTop: 8 }}>{inc.closeNote || "No closing note."}</p>
+              <p className="muted">{fmt(inc.closedAt)}</p>
             </section>
           )}
 

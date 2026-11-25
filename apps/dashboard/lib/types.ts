@@ -5,8 +5,8 @@ export type Findings = {
 };
 export type Recovery = {
   state: string; splitPercent: number; observedSharePercent: number | null;
-  samples: number; minSamples: number; errorRate: number; maxErrorRate: number;
-  consecutiveErrors: number; guardrail: string; advanceAllowed: boolean;
+  samples: number; minSamples: number; errorRate: number | null; maxErrorRate: number;
+  consecutiveErrors: number; guardrail: string; advanceAllowed: boolean; reason?: string | null;
 };
 export type Incident = {
   id: string; title: string; status: string; owner: string | null; alert: string;
@@ -18,6 +18,7 @@ export type Incident = {
     ordersFailed: number; amountFailed: number; ordersSaved: number; amountSaved: number;
     atRiskPerMinute: number; customersAffected: number;
   } | null;
+  closeNote?: string | null;
   timeline: { ts: string; actor: string; action: string; result: string }[];
 };
 export type Playbook = {
@@ -44,3 +45,7 @@ export type AuditRow = {
   before: FlagState; after: FlagState; readBack: FlagState; result: string;
 };
 export type FaultResult = { ok: true; provider: string; outage: boolean };
+export type Evidence = {
+  value: string; from: string; to: string; failedAttempts: number; customersAffected: number;
+  byOutcome: Record<string, number>; rows: unknown[];
+};
