@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import Mascot, { type MascotMood } from "./Mascot";
 import { Banner, Loaded, Pill, fmt, pct, statusKind, usePoll } from "./ui";
 import type { IncidentRow, PlaybookRow, State } from "@/lib/types";
 
@@ -12,14 +13,21 @@ export default function Overview(p: { state: Loaded<State>; incidents: Loaded<In
   const s = st.data;
   const open = incidents.filter((i) => !i.closedAt && i.status !== "Closed" && i.status !== "Resolved");
   const first = open[0];
+  const has = (x: string) => open.some((i) => i.status === x);
+  const mood: MascotMood = has("Investigating") ? "alert" : has("Recovering") ? "working" : has("Mitigated") ? "calm" : "happy";
   return (
     <>
-      <div className="titlerow"><h1>Overview</h1></div>
-      <p className="sub">
-        {first
-          ? <>Needs you: <Link href={`/incidents/${first.id}`}>{first.id}</Link> · {first.title} · {first.status}.</>
-          : "Overall delivery availability only. Any breakdown appears once findings exist."}
-      </p>
+      <div className="mc-head-row">
+        <Mascot mood={mood} size={88} />
+        <div>
+          <div className="titlerow"><h1>Overview</h1></div>
+          <p className="sub">
+            {first
+              ? <>Needs you: <Link href={`/incidents/${first.id}`}>{first.id}</Link> · {first.title} · {first.status}.</>
+              : "All quiet. Delivery is healthy."}
+          </p>
+        </div>
+      </div>
       <Banner error={st.error ?? inc.error ?? pb.error} />
 
       <div className="kpis">

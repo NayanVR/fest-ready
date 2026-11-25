@@ -1,0 +1,65 @@
+/* FestReady mascot. Ink + the one accent (--data). Motion is transform/opacity only and switched off for reduced-motion. */
+.mc { --mc-paper: var(--mc-bg, var(--surface)); display: block; flex: none; overflow: visible; }
+.mc * { transform-box: fill-box; transform-origin: center; }
+.mc .ink { fill: var(--primary); }
+.mc .ink-stroke { fill: none; stroke: var(--primary); stroke-width: 14; stroke-linecap: round; }
+.mc .ink-stroke.thin { stroke-width: 3.5; }
+.mc .paper-stroke { fill: none; stroke: var(--mc-paper); stroke-width: 19; stroke-linecap: round; }
+.mc .paper-line { stroke: var(--mc-paper); stroke-width: 4; stroke-linejoin: round; }
+.mc-window { fill: var(--surface); }
+.mc .line { fill: none; stroke: var(--primary); stroke-width: 5.5; stroke-linecap: round; }
+.mc .line.soft { stroke-width: 5; }
+.mc .glint { fill: var(--surface); }
+.mc-headset rect { fill: var(--data); }
+.mc-headset .mic { fill: none; stroke: var(--data); stroke-width: 3; stroke-linecap: round; }
+.mc-cloth { fill: var(--data); }
+.mc-sparkle { fill: var(--surface); }
+.mc-sparks path { fill: none; stroke: var(--data); stroke-width: 4; stroke-linecap: round; }
+.mc-bang path { fill: none; stroke: var(--negative); stroke-width: 5; stroke-linecap: round; }
+.mc-bang circle { fill: var(--negative); }
+
+@keyframes mc-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+@keyframes mc-wave { 0%, 100% { transform: rotate(-7deg) skewY(-4deg); } 50% { transform: rotate(8deg) skewY(5deg); } }
+@keyframes mc-blink { 0%, 93%, 100% { transform: scaleY(1); } 96% { transform: scaleY(0.08); } }
+@keyframes mc-twinkle { 0%, 100% { transform: scale(1) rotate(0); opacity: 1; } 50% { transform: scale(1.3) rotate(18deg); opacity: 0.7; } }
+@keyframes mc-pulse { 0%, 100% { opacity: 0.25; transform: scale(0.85); } 40% { opacity: 1; transform: scale(1.1); } }
+@keyframes mc-type { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(2.5px); } }
+@keyframes mc-pop { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.18); } }
+@keyframes mc-squint { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-1.5px); } }
+
+.mc-all { animation: mc-bob 3.4s ease-in-out infinite; }
+.mc-cloth { transform-origin: 0% 50%; animation: mc-wave 1.6s ease-in-out infinite; }
+.mc-sparkle { animation: mc-twinkle 2.6s ease-in-out infinite; }
+.mc-sparks path { animation: mc-pulse 2.2s ease-in-out infinite; }
+.mc-sparks path:nth-child(2) { animation-delay: 0.25s; }
+.mc-sparks path:nth-child(3) { animation-delay: 0.5s; }
+.mc-eyes { animation: mc-blink 4.6s ease-in-out infinite; }
+
+.mc-happy .mc-eyes { animation: mc-squint 1.7s ease-in-out infinite; }
+.mc-calm .mc-all { animation-duration: 6s; }
+.mc-calm .mc-cloth { animation-duration: 4.2s; }
+.mc-calm .mc-sparkle { animation-duration: 5s; }
+.mc-calm .mc-sparks path { animation-duration: 4.4s; }
+.mc-calm .mc-eyes { animation: none; }
+.mc-alert .mc-all { animation-duration: 1.8s; }
+.mc-alert .mc-cloth { animation-duration: 0.7s; }
+.mc-alert .mc-sparks path { animation-duration: 0.9s; stroke: var(--negative); }
+.mc-alert .mc-sparkle { animation-duration: 1.1s; }
+.mc-alert .mc-bang { animation: mc-pop 0.9s ease-in-out infinite; }
+.mc-working .mc-all { animation: none; }
+.mc-working .mc-head { animation: mc-bob 3.4s ease-in-out infinite; }
+.mc-working .mc-cloth { animation-duration: 3s; }
+.mc-working .mc-arm, .mc-working .mc-laptop, .mc-working .mc-body { animation: mc-type 0.42s ease-in-out infinite; }
+.mc-working .mc-laptop { animation-duration: 0.84s; }
+.mc-working .mc-body { animation-duration: 3.4s; animation-name: mc-bob; }
+.mc-working .mc-sparkle { animation-duration: 0.9s; }
+.mc-working .mc-sparks path { animation-duration: 0.8s; }
+
+/* Overview header: mascot beside the title and the one-line status */
+.mc-head-row { display: flex; align-items: center; gap: 16px; --mc-bg: var(--ground); }
+.mc-head-row .sub { margin-top: 2px; }
+.titlerow > .mc { --mc-bg: var(--ground); }
+
+@media (prefers-reduced-motion: reduce) {
+  .mc *, .mc { animation: none !important; }
+}

@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Mascot, { type MascotMood } from "./Mascot";
 import { Banner, Bar, Btn, Loaded, Notice, Pill, clock, fmt, money, pct, statusKind, useAction, usePoll } from "./ui";
 import type { Evidence, Incident as Inc, Playbook, PlaybookRow, Recovery } from "@/lib/types";
 
@@ -47,11 +48,13 @@ export default function Incident({ id, initial }: { id: string; initial: Loaded<
   // NORMAL = fallback switched off again: the controller reports split 0, but every customer is back on delivery.
   const shown = (rec?.state === "NORMAL" || rec?.state === "CLOSED") ? 100 : rec?.splitPercent ?? 0;
   const done = inc.status === "Resolved" || inc.status === "Closed";
+  const mood: MascotMood = inc.status === "Investigating" ? "alert" : inc.status === "Recovering" ? "working" : inc.status === "Mitigated" ? "calm" : "happy";
   const lastOk = !!inc.probe?.last?.length && inc.probe.last[inc.probe.last.length - 1]!;
 
   return (
     <>
       <div className="titlerow">
+        <Mascot mood={mood} size={56} />
         <h1 className="id" style={{ fontFamily: "var(--font)" }}>{inc.id}</h1>
         <Pill kind={statusKind(inc.status)}>{inc.status}</Pill>
         <span className="sp" />
@@ -137,7 +140,7 @@ export default function Incident({ id, initial }: { id: string; initial: Loaded<
               {steps.length > 0 && (
                 <div className="ladder" aria-label="Recovery steps">
                   {[0, ...steps].map((s) => (
-                    <div key={s} className={`${s > 0 && s <= shown ? "on" : ""} ${s === shown ? "now" : ""}`}>{s}%</div>
+                    <div key={s} className={`${s <= shown && shown > 0 ? "on" : ""} ${s === shown ? "now" : ""}`}>{s}%</div>
                   ))}
                 </div>
               )}
