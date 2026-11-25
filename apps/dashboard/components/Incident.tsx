@@ -11,7 +11,7 @@ const STEPS = ["Investigating", "Mitigated", "Recovering", "Resolved", "Closed"]
 // Why Advance is disabled, using only fields the controller sends (CONTRACTS §3.4).
 function whyNot(rec: Recovery, probe: Inc["probe"]): string {
   if (rec.reason) return rec.reason[0]!.toUpperCase() + rec.reason.slice(1) + "."; // the controller says why (breach, cooldown, samples…)
-  if (rec.state === "NORMAL") return "Recovery is complete.";
+  if ((rec.state === "NORMAL" || rec.state === "CLOSED")) return "Recovery is complete.";
   if (rec.state === "FALLBACK")
     return probe?.healthy ? `Provider probe has been healthy for ${probe.healthyFor ?? "–"}; waiting for the playbook's healthy-for time.`
                           : "Waiting for the provider probe to be healthy again.";
@@ -45,7 +45,7 @@ export default function Incident({ id, initial }: { id: string; initial: Loaded<
   const steps = pb?.recovery?.steps ?? [];
   const nextStep = rec ? steps.find((s) => s > rec.splitPercent) : undefined;
   // NORMAL = fallback switched off again: the controller reports split 0, but every customer is back on delivery.
-  const shown = rec?.state === "NORMAL" ? 100 : rec?.splitPercent ?? 0;
+  const shown = (rec?.state === "NORMAL" || rec?.state === "CLOSED") ? 100 : rec?.splitPercent ?? 0;
   const done = inc.status === "Resolved" || inc.status === "Closed";
   const lastOk = !!inc.probe?.last?.length && inc.probe.last[inc.probe.last.length - 1]!;
 
@@ -129,11 +129,11 @@ export default function Incident({ id, initial }: { id: string; initial: Loaded<
               <div className="cardhead">
                 <h2>Recovery</h2>
                 <Pill>{rec.state}</Pill>
-                {rec.state !== "NORMAL" && <Pill kind={rec.guardrail === "pass" ? "ok" : rec.guardrail === "breach" ? "bad" : "warn"}>guardrail: {rec.guardrail}</Pill>}
+                {!(rec.state === "NORMAL" || rec.state === "CLOSED") && <Pill kind={rec.guardrail === "pass" ? "ok" : rec.guardrail === "breach" ? "bad" : "warn"}>guardrail: {rec.guardrail}</Pill>}
                 <span className="sp" />
                 <span className="muted">advance: operator · rollback: automatic</span>
               </div>
-              <div className="bignum">{shown}%<small>{rec.state === "NORMAL" ? `of ${inc.value ?? "the value"}'s customers on delivery · fallback is off` : `of ${inc.value ?? "the value"}'s customers back on delivery · observed ${rec.observedSharePercent == null ? "–" : `${rec.observedSharePercent}%`}`}</small></div>
+              <div className="bignum">{shown}%<small>{(rec.state === "NORMAL" || rec.state === "CLOSED") ? `of ${inc.value ?? "the value"}'s customers on delivery · fallback is off` : `of ${inc.value ?? "the value"}'s customers back on delivery · observed ${rec.observedSharePercent == null ? "–" : `${rec.observedSharePercent}%`}`}</small></div>
               {steps.length > 0 && (
                 <div className="ladder" aria-label="Recovery steps">
                   {[0, ...steps].map((s) => (
@@ -141,7 +141,7 @@ export default function Incident({ id, initial }: { id: string; initial: Loaded<
                   ))}
                 </div>
               )}
-              {rec.state !== "NORMAL" && <div className="metrics">
+              {!(rec.state === "NORMAL" || rec.state === "CLOSED") && <div className="metrics">
                 <div>
                   <div className="muted">Samples</div>
                   <div>{rec.samples} <span className="muted">of {rec.minSamples} needed</span></div>
@@ -160,7 +160,7 @@ export default function Incident({ id, initial }: { id: string; initial: Loaded<
               <div className="actions">
                 <Btn className="primary" busy={busy} label="Advance" disabled={!rec.advanceAllowed || done}
                   onClick={() => act("Advance", "advance", { actor: operator() })}>
-                  {rec.state === "NORMAL" ? "Advance"
+                  {(rec.state === "NORMAL" || rec.state === "CLOSED") ? "Advance"
                     : rec.state === "PROBE_OK" || rec.state === "FALLBACK" ? `Start recovery at ${steps[0] ?? "first step"}%`
                     : nextStep ? `Advance to ${nextStep}%` : "Finish recovery (fallback off)"}
                 </Btn>
