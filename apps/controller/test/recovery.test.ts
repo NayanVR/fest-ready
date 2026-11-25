@@ -108,6 +108,38 @@ test("probes, other values, non-canary and pre-step events are excluded", () => 
   expect(evaluateGuardrail(pb, V, all, T0, T0 + WINDOW).guardrail).toBe("pass");
 });
 
+test("payment guardrail counts primary attempts for the affected cohort and excludes probes", () => {
+  const payment: Playbook = {
+    ...pb,
+    events: {
+      dimension_field: "paymentCohort", identity_field: "paymentCustomer", outcome_field: "paymentOutcome",
+      amount_field: "amount", canary_filter: { paymentRoute: "primary" },
+    },
+  };
+  const fields = payment.events;
+  const primary = fields.canary_filter!;
+  const event = (cohort: string, customer: string, route: object, outcome: string): Ev => ({
+    ts: T0, body: { [fields.dimension_field]: cohort, [fields.identity_field]: customer, [fields.outcome_field]: outcome, ...route },
+  });
+  const fallback = { paymentRoute: "fallback" };
+  const excluded = [
+    ...run(T0, g.min_samples, "error"),
+    event(OTHER, "customer", primary, "error"),
+    event(V, payment.probe.identities[V]!, primary, "error"),
+    event(V, "customer", fallback, "error"),
+  ];
+  const successes = Array.from({ length: g.min_samples }, (_, i) => event(V, `customer-${i}`, primary, "success"));
+  const failures = Array.from({ length: g.max_consecutive_errors }, (_, i) => event(V, `failure-${i}`, primary, "error"));
+  const now = T0 + WINDOW;
+  expect(evaluateGuardrail(payment, V, excluded, T0, now)).toMatchObject({ guardrail: "wait", samples: 0 });
+  expect(evaluateGuardrail(payment, V, [...excluded, ...successes], T0, now)).toMatchObject({
+    guardrail: "pass", advanceAllowed: true, samples: g.min_samples,
+  });
+  expect(evaluateGuardrail(payment, V, [...excluded, ...failures], T0, now)).toMatchObject({
+    guardrail: "breach", advanceAllowed: false, consecutiveErrors: g.max_consecutive_errors,
+  });
+});
+
 test("impact numbers", () => {
   const opened = T0, mitigated = T0 + 120_000, now = T0 + 300_000;
   const evs = [

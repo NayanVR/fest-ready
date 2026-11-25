@@ -2,6 +2,7 @@ import "./globals.css";
 import { cookies } from "next/headers";
 import Nav from "@/components/Nav";
 import { COOKIE, readSession } from "@/lib/session";
+import { paymentDemoEnabled } from "@/lib/server";
 
 export const metadata = { title: "FestReady ops" };
 
@@ -16,7 +17,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       </head>
       <body>
         <div className="shell">
-          <Nav user={user} />
+          <Nav user={user} paymentDemo={paymentDemoEnabled()} />
           <main className="canvas">{children}</main>
         </div>
       </body>

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { openDb } from "../src/db.ts";
-import { getPlaybook, seedPlaybooks, type Playbook } from "../src/playbooks.ts";
+import { getPlaybook, render, seedPlaybooks, type Playbook } from "../src/playbooks.ts";
 
 const root = join(import.meta.dir, "..");
 const seedDir = join(root, "playbooks");
@@ -82,7 +82,8 @@ test("playbook writes use real HTTP, audit atomically, and preserve an incident'
     unsafe.probe.request.body = { token: "${FLAGSMITH_MGMT_TOKEN}" };
     expect(await call(collection, "POST", unsafe)).toMatchObject({
       status: 422, body: { error: "INVALID_PLAYBOOK", reasons: [
-        "probe.request must POST to ${SHOP_URL}/api/orders", "probe.request.body must not contain environment placeholders",
+        "probe.request must POST to ${SHOP_URL}/api/orders or ${SHOP_URL}/api/payments",
+        "probe.request.body must not contain environment placeholders",
       ] },
     });
     expect(await call(item, "PUT", draft)).toMatchObject({ status: 404, body: { error: "NOT_FOUND" } });
@@ -170,6 +171,42 @@ test("opening a pre-B7 database preserves the playbook used by existing incident
   }
 });
 
+test("state reports availability independently for each playbook dimension", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "controller-availability-"));
+  const controller = await startController(join(dir, "controller.db"));
+  try {
+    const { call } = controller;
+    const payment = {
+      ...seed,
+      id: "payment-fixture",
+      dimension: { ...seed.dimension, name: "paymentCohort" },
+      events: {
+        dimension_field: "paymentCohort", identity_field: "paymentCustomer", outcome_field: "paymentOutcome",
+        canary_filter: { paymentRoute: "primary" },
+      },
+    };
+    expect((await call("/api/playbooks", "POST", payment)).status).toBe(201);
+    const value = seed.dimension.values[0]!;
+    const record = async (event: object) => expect((await call("/internal/orders", "POST", event)).status).toBe(202);
+    await record({
+      ...seed.events.canary_filter,
+      [seed.events.dimension_field]: value, [seed.events.identity_field]: "delivery-user", [seed.events.outcome_field]: "success",
+    });
+    await record({ paymentCohort: value, paymentCustomer: "payment-user", paymentRoute: "primary", paymentOutcome: "error" });
+    await record({ paymentCohort: value, paymentCustomer: "payment-user", paymentRoute: "fallback", paymentOutcome: "success" });
+    expect((await call("/api/state")).body).toMatchObject({
+      availability: 0.5,
+      availabilityByDimension: expect.arrayContaining([
+        { dimension: seed.dimension.name, availability: 1, primaryAvailability: 1 },
+        { dimension: payment.dimension.name, availability: 0.5, primaryAvailability: 0 },
+      ]),
+    });
+  } finally {
+    await controller.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("wizard discovers live fixture inputs and checks drafts without changing saved readiness", async () => {
   const dir = mkdtempSync(join(tmpdir(), "controller-playbook-wizard-"));
   const path = join(dir, "controller.db");
@@ -191,6 +228,12 @@ test("wizard discovers live fixture inputs and checks drafts without changing sa
     expect(await call(wizard + "label-values", "POST", { label: seed.dimension.label })).toEqual({
       status: 200, body: { values: [...seed.dimension.values].sort() },
     });
+    expect(await call(wizard + "label-values", "POST", { label: seed.dimension.label, metric: "fixture_total" })).toEqual({
+      status: 200, body: { values: [seed.dimension.values[0]] },
+    });
+    expect(await call(wizard + "label-values", "POST", {
+      label: seed.dimension.label, metric: 'fixture_total{other="selector"}',
+    })).toMatchObject({ status: 400 });
     expect(await call(wizard + "label-values", "POST", { label: "fixture_upstream_error" })).toEqual({
       status: 502, body: { error: "UPSTREAM_ERROR", message: "Prometheus request failed" },
     });
@@ -240,6 +283,15 @@ test("wizard discovers live fixture inputs and checks drafts without changing sa
     expect(await call(wizard + "probe", "POST", { playbook: probeDraft, value })).toEqual({
       status: 502, body: { error: "UPSTREAM_ERROR", message: "Shop API request failed" },
     });
+
+    probeDraft.probe.request.url = "${SHOP_URL}/api/payments";
+    expect(await call(wizard + "probe", "POST", { playbook: probeDraft, value })).toEqual({
+      status: 502, body: { error: "UPSTREAM_ERROR", message: "Shop API request failed" },
+    });
+    probeDraft.probe.request.body = seed.probe.request.body;
+    expect(await call(wizard + "probe", "POST", { playbook: probeDraft, value })).toEqual({
+      status: 200, body: { healthy: true, status: seed.probe.expect.healthy.status, error: null },
+    });
     expect((await call("/api/audit")).body).toEqual([]);
     expect((await call("/api/incidents")).body).toEqual([]);
     expect((await call("/api/playbooks")).body).toHaveLength(1);
@@ -255,6 +307,58 @@ test("wizard discovers live fixture inputs and checks drafts without changing sa
         status: 503, body: { error: "DEPENDENCY_UNCONFIGURED" },
       });
     }
+  } finally {
+    await controller?.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+}, 15_000);
+
+test("wizard catalog combines configured and observed names and keeps local results when upstreams are absent", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "controller-wizard-catalog-"));
+  const path = join(dir, "controller.db");
+  const route = "/api/playbook-wizard/catalog";
+  let controller: Awaited<ReturnType<typeof startController>> | undefined;
+  try {
+    controller = await startController(path);
+    expect(await controller.call(route, "POST", {}, null)).toMatchObject({ status: 401 });
+    expect(await controller.call(route, "POST", { unexpected: true })).toMatchObject({ status: 400 });
+    const observedAlert = "FixtureObservedAlert";
+    expect((await controller.call("/webhooks/alertmanager", "POST", {
+      alerts: [{ status: "firing", labels: { alertname: observedAlert } }],
+    })).status).toBe(200);
+    expect((await controller.call("/internal/orders", "POST", {
+      [seed.events.dimension_field]: seed.dimension.values[0],
+      [seed.events.identity_field]: "private-identity",
+    })).status).toBe(202);
+    const local = {
+      alerts: [...seed.match.alerts, observedAlert].sort(),
+      eventFields: [seed.events.dimension_field, seed.events.identity_field].sort(),
+    };
+    expect(await controller.call(route, "POST", {})).toEqual({
+      status: 200,
+      body: {
+        ...local,
+        flags: [seed.flag.key, seed.flag.key + "_other"].sort(),
+        segments: seed.dimension.values.flatMap((value) => [
+          render(seed.segments.fallback, { value }), render(seed.segments.recovery, { value }),
+        ]).sort(),
+        alerts: [...local.alerts, "FixtureConfiguredAlert"].sort(),
+        metrics: ["fixture_errors", "fixture_total"],
+        labels: [seed.dimension.label, "fixture_label"].sort(),
+        unavailable: [],
+      },
+    });
+    await controller.stop();
+    controller = undefined;
+    controller = await startController(path, true);
+    expect(await controller.call(route, "POST", {})).toEqual({
+      status: 200,
+      body: {
+        ...local,
+        flags: [], segments: [], labels: [], metrics: [],
+        unavailable: ["Flagsmith flags", "Flagsmith segments", "Prometheus alerts", "Prometheus labels", "Prometheus metrics"],
+      },
+    });
   } finally {
     await controller?.stop();
     rmSync(dir, { recursive: true, force: true });

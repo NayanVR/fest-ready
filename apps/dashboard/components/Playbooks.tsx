@@ -3,18 +3,27 @@ import { useEffect, useRef, useState } from "react";
 import { Banner, Btn, Loaded, Notice, Pill, usePoll, useAction } from "./ui";
 import type { Note } from "./ui";
 import type { Playbook, PlaybookRow } from "@/lib/types";
+import { playbookTemplates } from "@/lib/playbook-templates";
 import PlaybookWizard from "./PlaybookWizard";
 
-export default function Playbooks({ initial }: { initial: Loaded<PlaybookRow[]> }) {
+export default function Playbooks({ initial, defaultOwner, paymentProbeEnabled }: {
+  initial: Loaded<PlaybookRow[]>;
+  defaultOwner?: string;
+  paymentProbeEnabled?: boolean;
+}) {
   const { data, error, reload } = usePoll<PlaybookRow[]>("playbooks", initial);
   const { busy, note, run } = useAction();
-  const [wizard, setWizard] = useState<{ playbook?: Playbook }>();
+  const [wizard, setWizard] = useState<{ playbook?: Playbook; draft?: Omit<Playbook, "version"> }>();
+  const [choosingTemplate, setChoosingTemplate] = useState(false);
+  const [templateIndex, setTemplateIndex] = useState(0);
   const [opening, setOpening] = useState<string>();
   const [feedback, setFeedback] = useState<Note>(null);
   const opener = useRef<HTMLButtonElement>(null);
+  const templatePicker = useRef<HTMLSelectElement>(null);
   useEffect(() => {
-    if (!wizard && !opening) opener.current?.focus();
-  }, [wizard, opening]);
+    if (choosingTemplate) templatePicker.current?.focus();
+    else if (!wizard && !opening) opener.current?.focus();
+  }, [wizard, opening, choosingTemplate]);
 
   async function edit(id: string) {
     setOpening(id);
@@ -32,12 +41,18 @@ export default function Playbooks({ initial }: { initial: Loaded<PlaybookRow[]> 
   }
 
   const list = Array.isArray(data) ? data : [];
-  const disabled = Boolean(wizard || opening || busy);
+  const disabled = Boolean(wizard || choosingTemplate || opening || busy);
   return (
     <>
       <div className="titlerow">
         <h1>Playbooks</h1>
         <span className="sp" />
+        <button disabled={disabled} onClick={(event) => {
+          opener.current = event.currentTarget;
+          setFeedback(null);
+          setTemplateIndex(0);
+          setChoosingTemplate(true);
+        }}>Create playbook from template</button>
         <button className="primary" disabled={disabled} onClick={(event) => {
           opener.current = event.currentTarget;
           setFeedback(null);
@@ -48,7 +63,26 @@ export default function Playbooks({ initial }: { initial: Loaded<PlaybookRow[]> 
       <Banner error={error} />
       <Notice n={note} />
       <Notice n={feedback} />
-      {wizard && <PlaybookWizard playbook={wizard.playbook} onCancel={() => setWizard(undefined)} onSave={(saved) => {
+      {choosingTemplate && <section className="card" aria-labelledby="playbook-template-title">
+        <div className="cardhead"><h2 id="playbook-template-title">Choose a template</h2></div>
+        <form className="form" onSubmit={(event) => {
+          event.preventDefault();
+          setWizard({ draft: { ...playbookTemplates[templateIndex]!.draft, owner: defaultOwner ?? "" } });
+          setChoosingTemplate(false);
+        }}>
+          <label>Template
+            <select ref={templatePicker} value={templateIndex} onChange={(event) => setTemplateIndex(Number(event.target.value))}>
+              {playbookTemplates.map(({ title }, index) => <option key={title} value={index}>{title}</option>)}
+            </select>
+          </label>
+          <p className="muted">{playbookTemplates[templateIndex]!.description}</p>
+          <div className="actions wizard-actions">
+            <button type="button" onClick={() => setChoosingTemplate(false)}>Cancel</button>
+            <button className="primary" type="submit">Use template</button>
+          </div>
+        </form>
+      </section>}
+      {wizard && <PlaybookWizard {...wizard} defaultOwner={defaultOwner} paymentProbeEnabled={paymentProbeEnabled} onCancel={() => setWizard(undefined)} onSave={(saved) => {
         setWizard(undefined);
         setFeedback({ ok: true, text: `Saved ${saved.id} · v${saved.version}` });
         void reload();

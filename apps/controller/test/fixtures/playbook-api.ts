@@ -16,7 +16,7 @@ const fixture = Bun.serve({
   port: 0,
   async fetch(req) {
     const { pathname, searchParams } = new URL(req.url);
-    if (pathname === "/api/orders" && req.method === "POST") {
+    if ((pathname === "/api/orders" || pathname === "/api/payments") && req.method === "POST") {
       const body = await req.json();
       if (body.fixtureRedirect) return new Response(null, { status: 307, headers: { Location: "/fixture/redirect-target" } });
       if (body.fixtureUnhealthy || body.synthetic !== true)
@@ -24,10 +24,29 @@ const fixture = Bun.serve({
       return new Response(null, { status: seed.probe.expect.healthy.status });
     }
     if (pathname === "/fixture/redirect-target") return new Response(null, { status: seed.probe.expect.healthy.status });
+    if (pathname === "/api/v1/label/__name__/values" && searchParams.get("limit") === "2000" &&
+        Number(searchParams.get("end")) - Number(searchParams.get("start")) === 600)
+      return Response.json({ status: "success", data: ["fixture_total", "fixture_errors", "fixture_total"] });
+    if (pathname === "/api/v1/labels" && searchParams.get("limit") === "500" &&
+        Number(searchParams.get("end")) - Number(searchParams.get("start")) === 600)
+      return Response.json({ status: "success", data: [seed.dimension.label, "__name__", "fixture_label"] });
+    if (pathname === "/api/v1/rules" && searchParams.get("type") === "alert" && searchParams.get("exclude_alerts") === "true") {
+      return Response.json({
+        status: "success", data: { groups: [{ rules: [
+          { type: "alerting", name: "FixtureConfiguredAlert" },
+          { type: "recording", name: "fixture_recording" },
+        ] }] },
+      });
+    }
     if (pathname === `/api/v1/label/${seed.dimension.label}/values` && searchParams.get("limit") === "100" &&
         searchParams.has("start") && searchParams.has("end") &&
-        Number(searchParams.get("end")) - Number(searchParams.get("start")) === 600)
-      return Response.json({ status: "success", data: [...seed.dimension.values].reverse().concat(seed.dimension.values) });
+        Number(searchParams.get("end")) - Number(searchParams.get("start")) === 600) {
+      const match = searchParams.get("match[]");
+      if (match === '{__name__="fixture_total"}')
+        return Response.json({ status: "success", data: [seed.dimension.values[0]] });
+      if (match === null)
+        return Response.json({ status: "success", data: [...seed.dimension.values].reverse().concat(seed.dimension.values) });
+    }
     if (pathname === "/api/v1/label/fixture_upstream_error/values")
       return new Response("private fixture response", { status: 500 });
     if (req.headers.get("Authorization") !== "Api-Key fixture-management")
@@ -36,10 +55,14 @@ const fixture = Bun.serve({
       const term = searchParams.get("search") ?? "";
       if (term === "fixture-upstream-error") return new Response("private fixture response", { status: 500 });
       const features = [{ id: 2, name: seed.flag.key + "_other" }, { id: 1, name: seed.flag.key }];
+      if (!term) {
+        if (searchParams.get("page") === "2") return Response.json({ results: [features[1]] });
+        return Response.json({ results: [features[0]], next: "http://unexpected.example/not-the-feature-path?page=2" });
+      }
       return Response.json({ results: features.filter(({ name }) => name.includes(term)) });
     }
     if (pathname === "/api/v1/projects/1/segments/")
-      return Response.json({ results: names.map((name, i) => ({ name, id: i + 1 })).filter(({ name }) => name === searchParams.get("q")) });
+      return Response.json({ results: names.map((name, i) => ({ name, id: i + 1 })).filter(({ name }) => name.includes(searchParams.get("q") ?? "")) });
     const segment = /^\/api\/v1\/projects\/1\/segments\/(\d+)\/$/.exec(pathname);
     if (segment) {
       const id = Number(segment[1]);
@@ -69,6 +92,7 @@ const upstream = fixture.url.origin;
 if (process.env.B7_FIXTURE_NO_UPSTREAMS !== "1") {
   process.env.SHOP_URL = upstream;
   process.env.PROMETHEUS_URL = upstream;
+  process.env.FLAGSMITH_ADMIN_URL = upstream + "/api/v1/";
   process.env.FLAGSMITH_MGMT_TOKEN = "fixture-management";
   process.env.FLAGSMITH_PROJECT_ID = "1";
   process.env.FLAGSMITH_ENV_ID = "1";
@@ -77,7 +101,6 @@ if (process.env.B7_FIXTURE_NO_UPSTREAMS !== "1") {
 const networkFetch = globalThis.fetch;
 globalThis.fetch = Object.assign(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
   const url = new URL(String(input));
-  if (url.origin === "https://api.flagsmith.com") return networkFetch(upstream + url.pathname + url.search, init);
   if (url.origin === upstream) return networkFetch(input, init);
   throw new Error("unexpected upstream destination in playbook API fixture");
 }, networkFetch);

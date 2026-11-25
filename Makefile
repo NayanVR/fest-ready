@@ -1,12 +1,13 @@
 CLUSTER ?= rehearsal
 export KUBE_CONTEXT = kind-$(CLUSTER)
 KUBECTL = kubectl --context "$(KUBE_CONTEXT)"
+PAYMENT_DEMO = docker compose --env-file /dev/null -p festready-payments -f infra/payment-demo/compose.yaml
 SERVICES := partner-mock shop-api load-generator
 ALL_APPS := controller dashboard
 APPS ?= $(foreach app,$(ALL_APPS),$(if $(wildcard apps/$(app)/Dockerfile),$(app)))
 export P
 
-.PHONY: up down images deploy load-start load-stop outage outage-clear redherring monitoring
+.PHONY: up down images deploy load-start load-stop outage outage-clear redherring monitoring payment-demo-up payment-demo-down payment-demo-smoke
 
 up:
 	@clusters=$$(kind get clusters) && { \
@@ -54,3 +55,12 @@ redherring:
 
 monitoring:
 	@set -ea; . ./.env; set +a; sh infra/monitoring/install.sh "$(KUBE_CONTEXT)"
+
+payment-demo-up:
+	$(PAYMENT_DEMO) up --build -d --wait
+
+payment-demo-down:
+	$(PAYMENT_DEMO) down
+
+payment-demo-smoke:
+	@sh infra/payment-demo/smoke.sh

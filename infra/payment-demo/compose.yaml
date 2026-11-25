@@ -1,0 +1,60 @@
+services:
+  payment-demo:
+    build: ../../services/payment-demo
+    environment:
+      PORT: "4300"
+      # These keys authenticate only requests inside this isolated simulation.
+      ADMIN_SECRET: "${PAYMENT_DEMO_ADMIN_SECRET:-payment-sandbox-admin}"
+      PAYMENT_DEMO_ADMIN_KEY: "${PAYMENT_DEMO_FLAG_KEY:-payment-sandbox-flags}"
+  shop-api:
+    build: ../../services/shop-api
+    depends_on: [payment-demo, partner-mock, controller]
+    environment:
+      PORT: "4001"
+      PAYMENT_DEMO_URL: "http://payment-demo:4300"
+      PARTNER_URL: "http://partner-mock:4003"
+      CONTROLLER_URL: "http://controller:4100"
+      ADMIN_SECRET: "${PAYMENT_DEMO_ADMIN_SECRET:-payment-sandbox-admin}"
+  partner-mock:
+    build: ../../services/partner-mock
+    environment:
+      PORT: "4003"
+      ADMIN_SECRET: "${PAYMENT_DEMO_ADMIN_SECRET:-payment-sandbox-admin}"
+  controller:
+    build: ../../apps/controller
+    depends_on: [payment-demo]
+    tmpfs:
+      - /payment-playbooks
+    environment:
+      # Start with no playbooks so the operator can create one in the video.
+      PLAYBOOK_DIR: "/payment-playbooks"
+      DB_PATH: "/data/controller.db"
+      SHOP_URL: "http://shop-api:4001"
+      PARTNER_URL: "http://partner-mock:4003"
+      ADMIN_SECRET: "${PAYMENT_DEMO_ADMIN_SECRET:-payment-sandbox-admin}"
+      FLAGSMITH_ADMIN_URL: "http://payment-demo:4300/api/v1"
+      FLAGSMITH_MGMT_TOKEN: "${PAYMENT_DEMO_FLAG_KEY:-payment-sandbox-flags}"
+      FLAGSMITH_PROJECT_ID: "1"
+      FLAGSMITH_ENV_ID: "1"
+  dashboard:
+    build: ../../apps/dashboard
+    depends_on: [controller, shop-api]
+    networks: [default, browser]
+    ports:
+      - "127.0.0.1:${PAYMENT_DEMO_PORT:-3100}:3000"
+    environment:
+      PAYMENT_DEMO_ENABLED: "1"
+      CONTROLLER_URL: "http://controller:4100"
+      SHOP_URL: "http://shop-api:4001"
+      ADMIN_SECRET: "${PAYMENT_DEMO_ADMIN_SECRET:-payment-sandbox-admin}"
+      DEMO_PROVIDERS: "a,b,c"
+    healthcheck:
+      test: ["CMD", "bun", "-e", "const res = await fetch('http://127.0.0.1:3000/healthz'); if (!res.ok) process.exit(1);"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+networks:
+  default:
+    internal: true
+  browser: {}

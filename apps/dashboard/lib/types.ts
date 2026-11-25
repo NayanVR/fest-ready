@@ -34,6 +34,7 @@ export type Playbook = {
   recovery: {
     method: "split" | "segments";
     steps: number[];
+    auto_advance?: boolean;
     guardrail: { min_samples: number; max_error_rate: number; max_consecutive_errors: number; window: string };
     cooldown_after_rollback: string;
   };
@@ -52,6 +53,7 @@ export type Playbook = {
 // "Other read shapes" in CONTRACTS.md §3.4.
 export type State = {
   availability: number | null;                  // fraction 0..1, null if no events
+  availabilityByDimension?: { dimension: string; availability: number | null; primaryAvailability: number | null }[];
   openIncidents: number;
   playbooks: { ready: number; broken: number };
 };

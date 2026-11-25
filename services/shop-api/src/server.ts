@@ -3,6 +3,7 @@ import express from 'express';
 import { Flagsmith } from 'flagsmith-nodejs';
 import { Counter, Histogram, Registry } from 'prom-client';
 import { customerRoute, deliveryOptions } from './customers.ts';
+import { paymentRoutes } from './payments.ts';
 
 const app = express();
 const port = Number(process.env.PORT ?? 4001);
@@ -63,6 +64,11 @@ async function postJson(url: string, body: object, timeoutMs: number) {
   });
   void response.body?.cancel().catch(() => {});
   return response.status;
+}
+
+function postController(path: string, body: object) {
+  if (!controllerUrl) return Promise.resolve();
+  return postJson(`${controllerUrl}${path}`, body, 500).then(() => {}, () => {});
 }
 
 async function dispatch(orderId: string, { city, provider }: CustomerRoute) {
@@ -153,13 +159,10 @@ app.post('/api/orders', express.json(), async (req, res) => {
 
   const latencyMs = Math.round(performance.now() - started);
   orders.inc({ city, mode, result: outcome });
-  if (controllerUrl) {
-    const event = {
-      orderId, customerId, city, mode, provider, deliveryFlag, outcome, errorCode,
-      upstreamStatus, amount, latencyMs, synthetic, ts: new Date().toISOString(),
-    };
-    void postJson(`${controllerUrl}/internal/orders`, event, 500).catch(() => {});
-  }
+  void postController('/internal/orders', {
+    orderId, customerId, city, mode, provider, deliveryFlag, outcome, errorCode,
+    upstreamStatus, amount, latencyMs, synthetic, ts: new Date().toISOString(),
+  });
 
   if (errorCode === 'DELIVERY_UNAVAILABLE') {
     return sendError(res, 409, errorCode, 'Home delivery is paused in your city. Pickup is available.', { outcome });
@@ -171,6 +174,11 @@ app.post('/api/orders', express.json(), async (req, res) => {
   }
   res.status(201).json({ orderId, customerId, city, mode, ...shipment, amount, outcome, latencyMs });
 });
+
+const paymentDemoUrl = process.env.PAYMENT_DEMO_URL?.trim();
+if (paymentDemoUrl) {
+  app.use('/api/payments', paymentRoutes(paymentDemoUrl, process.env.ADMIN_SECRET, postController, sendError));
+}
 
 app.use((_req, res) => sendError(res, 404, 'NOT_FOUND', 'Route not found.'));
 app.use((error: { status?: number }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
