@@ -495,6 +495,13 @@ Each incident is a ticket with an ID, an owner and **its own page** (`/incidents
   - customers affected.
 - **Provider evidence pack:** an export of failed attempts for the segment (time range, count, status codes, customers affected) to escalate to the vendor or claim SLA credits.
 
+### 9.7 Approval reminders over Sarvam Voice Agents
+
+- In the wizard's recovery settings, an operator can enable a voice reminder and choose a recipient mobile number, a wait of 1–1440 minutes, and a call language. The review step shows the delay and language with a masked number. The wizard keeps reminder settings out of the AI drafting request.
+- The controller starts the delay when a fallback approval, a recovery start, or a manual recovery advance is actionable. Approval or loss of eligibility ends that wait. Current playbook contact settings apply to open incidents. Recovery behavior still comes from the incident's playbook snapshot.
+- The controller claims one attempt per continuously pending approval in SQLite before requesting an Instant Outbound call. It skips retries after a failed or uncertain request to avoid duplicate calls. The incident audit records whether Sarvam accepted the request. The operator reviews and approves the action in FestReady.
+- The call uses the configured committed agent version and outbound caller number. The localized greeting identifies the incident and the action awaiting approval. Set the Voice Agents credentials and caller details in the controller environment. See the [setup guide](../infra/k8s/sarvam-voice.md).
+
 ---
 
 ## 10. Fault injection
@@ -636,6 +643,7 @@ Who does which check is in [`WORK.md`](WORK.md).
 
 - _Implemented with simulated input on `demo/payment-failover`:_ the isolated payment fixture, synthetic alert, operator findings and approval, cohort-scoped fallback, and a recovered primary probe. The Compose smoke test exercises this path, including an unavailable backup and a healthy unrelated cohort. Controller tests cover payment canary filtering and automatic rollback behavior.
 - _Verified on `demo/payment-failover` against local fixtures:_ separate availability metrics, generic playbook creation, live discovery, synthetic probe, readiness, and save. The wizard flow was exercised in Chrome. Runtime guardrails and readiness use events. PromQL query fields are authorable, and live PromQL health and value-type failover remain unverified.
+- _Verified with a live call on `feat/sarvam-approval-calls`:_ an isolated controller held a simulated fallback approval for the configured delay and dispatched one English call through Sarvam Voice Agents. The recipient confirmed the call reached their mobile and spoke the incident ID. Automated controller tests cover manual recovery reminders and duplicate suppression. The rehearsal deployment was left running as before.
 - _Proposed:_ readiness drills, Sarvam win-back messages, and multi-tenant operation.
 
 Never present a hand-written diagnosis as NuBi output. Findings entered through the form are labelled `source: operator`. Never call a step "automatic" if a human clicked it: Approve and Start recovery are human clicks; the later steps are automatic only with `recovery.auto_advance`.
