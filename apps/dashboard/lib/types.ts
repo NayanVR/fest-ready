@@ -21,6 +21,11 @@ export type Incident = {
   closeNote?: string | null;
   timeline: { ts: string; actor: string; action: string; result: string }[];
 };
+export const SARVAM_VOICE_LANGUAGES = [
+  "Assamese", "Bengali", "English", "Gujarati", "Hindi", "Kannada", "Malayalam",
+  "Marathi", "Odia", "Punjabi", "Sanskrit", "Tamil", "Telugu",
+] as const;
+export type SarvamVoiceLanguage = (typeof SARVAM_VOICE_LANGUAGES)[number];
 export type Playbook = {
   id: string; version: number; owner: string; description: string;
   match: { alerts: string[]; cause: "external" | "internal" };
@@ -38,6 +43,7 @@ export type Playbook = {
     guardrail: { min_samples: number; max_error_rate: number; max_consecutive_errors: number; window: string };
     cooldown_after_rollback: string;
   };
+  approval_call?: { phone_number: string; delay_minutes: number; language: SarvamVoiceLanguage };
   events: {
     dimension_field: string; identity_field: string; outcome_field: string; amount_field?: string;
     canary_filter?: Record<string, unknown>;

@@ -5,6 +5,7 @@
 // - probe (every tick): while Mitigated, send the playbook's probe request every `probe.every`; FALLBACK → PROBE_OK once
 //   probes have passed for `healthy_for` (checked every tick, not only after a probe), PROBE_OK → FALLBACK on a failure.
 import type { Database } from "bun:sqlite";
+import { approvalCallTick } from "./approval-calls.ts";
 import { warm } from "./flagsmith.ts";
 import { act, incidentId, incidentPlaybook, probeResults, recordProbe, serial, stepGuardrail } from "./incidents.ts";
 import { log } from "./log.ts";
@@ -104,4 +105,5 @@ export function startLoops(db: Database) {
       warm(pb, value).catch((e) => log("warn", "flagsmith warm-up failed", { playbook: pb.id, value, error: e.message }));
   every(TICK_MS, "guardrail", () => guardrailTick(db));
   every(PROBE_TICK_MS, "probe", () => probeTick(db));
+  every(TICK_MS, "approval call", () => approvalCallTick(db));
 }

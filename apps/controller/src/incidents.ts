@@ -14,12 +14,13 @@ export const invalidPlaybook = (reasons: string[]): Result => ({
   status: 422, body: { error: "INVALID_PLAYBOOK", message: "playbook validation failed", reasons },
 });
 
-type Row = {
+export type IncidentRow = {
   n: number; alert: string; state: string; owner: string | null; playbook: string | null; value: string | null;
   playbook_snapshot: string | null;
   split: number; step_started_at: number | null; fallback_at: number | null; rolled_back_at: number | null;
   opened_at: string; mitigated_at: string | null; resolved_at: string | null; closed_at: string | null; close_note: string | null;
 };
+type Row = IncidentRow;
 
 export const incidentId = (n: number) => `INC-${String(n).padStart(4, "0")}`;
 const parseId = (id: string) => (/^INC-\d+$/.test(id) ? Number(id.slice(4)) : -1);
@@ -48,6 +49,10 @@ function audit(db: Database, incident: number | null, actor: string, action: str
   log("info", "audit", { incident: incident === null ? null : incidentId(incident), actor, action, result });
 }
 
+export function auditApprovalCall(db: Database, incident: number, approval: string, accepted: boolean) {
+  audit(db, incident, "controller", `approval call ${accepted ? "accepted" : "failed"} (${approval})`, accepted ? "ok" : "error");
+}
+
 // Newest first.
 export function auditRows(db: Database, incident?: string) {
   const rows = incident
@@ -71,6 +76,10 @@ export function writePlaybook(db: Database, input: any, actor: string, id?: stri
     if (id !== undefined && !previous) return err(404, "NOT_FOUND", `${id} not found`);
     const { actor: _actor, readiness: _readiness, reasons: _reasons, ...definition } = input;
     const pb = persistPlaybook(db, definition, (previous?.version ?? 0) + 1);
+    if (previous?.approval_call && !pb.approval_call) {
+      db.run(`DELETE FROM approval_call_waits WHERE claimed = 0
+        AND incident IN (SELECT n FROM incidents WHERE playbook = ?)`, [pb.id]);
+    }
     audit(db, null, actor, `playbook ${previous ? "updated" : "created"}: ${pb.id} v${pb.version}`, "ok");
     return { status: previous ? 200 : 201, body: pb };
   }).immediate();

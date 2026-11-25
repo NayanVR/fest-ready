@@ -3,6 +3,7 @@ import { listFeatureNames, listSegmentNames, searchFeatureNames } from "./flagsm
 import { err, invalidPlaybook, type Result } from "./incidents.ts";
 import { sendProbe } from "./loops.ts";
 import { listPlaybooks, validateWritablePlaybook, type Playbook } from "./playbooks.ts";
+import { sarvamVoiceConfigured } from "./sarvam-voice.ts";
 import { draftReadiness, recentEventFields } from "./status.ts";
 
 const ok = (body: unknown): Result => ({ status: 200, body });
@@ -74,6 +75,7 @@ export async function wizardCatalog(db: Database, input: unknown): Promise<Resul
     flags, segments, metrics: metrics.filter(Boolean), labels: labels.filter((name) => name && !name.startsWith("__")),
     alerts: sortedStrings([...configuredAlerts, ...observedAlerts, ...savedAlerts]).filter(Boolean),
     eventFields: recentEventFields(db),
+    approvalCallAvailable: sarvamVoiceConfigured(),
     unavailable: unavailable.sort(),
   });
 }
