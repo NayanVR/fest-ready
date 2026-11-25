@@ -18,6 +18,7 @@ node_modules/
 data/
 .next/
 dist/
+.DS_Store
 ````
 
 ## `.env.example`
