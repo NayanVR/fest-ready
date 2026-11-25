@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: partner-mock
+  namespace: providers
+  labels: {app: partner-mock}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: partner-mock}
+  template:
+    metadata:
+      labels: {app: partner-mock, runtime: bun}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - name: partner-mock
+        image: partner-mock:dev
+        imagePullPolicy: IfNotPresent
+        ports:
+        - {name: http, containerPort: 4003}
+        readinessProbe:
+          httpGet: {path: /healthz, port: http}
+        env:
+        - name: PORT
+          value: "4003"
+        - name: ADMIN_SECRET
+          valueFrom:
+            secretKeyRef: {name: app-secrets, key: ADMIN_SECRET}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: partner-mock
+  namespace: providers
+  labels: {app: partner-mock}
+spec:
+  selector: {app: partner-mock}
+  ports:
+  - name: http
+    port: 80
+    targetPort: http

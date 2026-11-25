@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: load-generator
+  namespace: shop
+  labels: {app: load-generator}
+spec:
+  replicas: 0
+  selector:
+    matchLabels: {app: load-generator}
+  template:
+    metadata:
+      labels: {app: load-generator, runtime: bun}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - name: load-generator
+        image: load-generator:dev
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: SHOP_URL
+          value: "http://shop-api.shop"
+        - name: RATE_PER_SEC
+          value: "20"
+        - name: DURATION_SEC
+          value: "3600"
+        - name: DELIVERY_RATIO
+          value: "0.7"

@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shop-api
+  namespace: shop
+  labels: {app: shop-api}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: shop-api}
+  template:
+    metadata:
+      labels: {app: shop-api, runtime: bun}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - name: shop-api
+        image: shop-api:dev
+        imagePullPolicy: IfNotPresent
+        ports:
+        - {name: http, containerPort: 4001}
+        readinessProbe:
+          httpGet: {path: /healthz, port: http}
+        env:
+        - name: PARTNER_URL
+          value: "http://partner-mock.providers"
+        - name: CONTROLLER_URL
+          value: "http://controller.shop"
+        - name: PORT
+          value: "4001"
+        - name: FLAGSMITH_SERVER_KEY
+          valueFrom:
+            secretKeyRef: {name: app-secrets, key: FLAGSMITH_SERVER_KEY, optional: true}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shop-api
+  namespace: shop
+  labels: {app: shop-api}
+spec:
+  type: NodePort
+  selector: {app: shop-api}
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+    nodePort: 30401
