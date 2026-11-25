@@ -9,6 +9,8 @@ const ALLOWED: [string, RegExp][] = [
   ["GET", new RegExp(`^incidents/${ID}/evidence$`)],
   ["POST", new RegExp(`^incidents/${ID}/(ack|findings|approve|advance|rollback|close)$`)],
   ["POST", new RegExp(`^playbooks/${ID}/check$`)],
+  ["POST", /^playbooks$/],
+  ["PUT", new RegExp(`^playbooks/${ID}$`)],
   ["POST", /^fault$/],
 ];
 
@@ -18,7 +20,8 @@ async function proxy(req: NextRequest, { params }: { params: Promise<{ path: str
     return Response.json({ error: "NOT_ALLOWED", message: `${req.method} /api/${path} is not proxied` }, { status: 404 });
 
   const headers: Record<string, string> = {};
-  if (req.method === "POST") {
+  const write = req.method === "POST" || req.method === "PUT";
+  if (write) {
     headers["content-type"] = "application/json";
     headers["x-admin-secret"] = process.env.ADMIN_SECRET ?? "";
   }
@@ -26,7 +29,7 @@ async function proxy(req: NextRequest, { params }: { params: Promise<{ path: str
     const r = await fetch(`${controllerUrl()}/api/${path}${req.nextUrl.search}`, {
       method: req.method,
       headers,
-      body: req.method === "POST" ? await req.text() : undefined,
+      body: write ? await req.text() : undefined,
       cache: "no-store",
       // approve/advance/rollback make several Flagsmith calls (~30 s seen)
       signal: AbortSignal.timeout(60000),
@@ -42,4 +45,4 @@ async function proxy(req: NextRequest, { params }: { params: Promise<{ path: str
   }
 }
 
-export { proxy as GET, proxy as POST };
+export { proxy as GET, proxy as POST, proxy as PUT };

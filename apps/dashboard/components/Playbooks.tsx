@@ -1,26 +1,71 @@
 "use client";
+import { useEffect, useRef, useState } from "react";
 import { Banner, Btn, Loaded, Notice, Pill, usePoll, useAction } from "./ui";
-import type { PlaybookRow } from "@/lib/types";
+import type { Note } from "./ui";
+import type { Playbook, PlaybookRow } from "@/lib/types";
+import PlaybookWizard from "./PlaybookWizard";
 
 export default function Playbooks({ initial }: { initial: Loaded<PlaybookRow[]> }) {
   const { data, error, reload } = usePoll<PlaybookRow[]>("playbooks", initial);
   const { busy, note, run } = useAction();
+  const [wizard, setWizard] = useState<{ playbook?: Playbook }>();
+  const [opening, setOpening] = useState<string>();
+  const [feedback, setFeedback] = useState<Note>(null);
+  const opener = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!wizard && !opening) opener.current?.focus();
+  }, [wizard, opening]);
+
+  async function edit(id: string) {
+    setOpening(id);
+    setFeedback(null);
+    try {
+      const response = await fetch(`/api/c/playbooks/${encodeURIComponent(id)}`, { cache: "no-store" });
+      const body = await response.json().catch(() => null);
+      if (!response.ok || !body) throw new Error(body?.message ?? `Could not load ${id} (HTTP ${response.status}).`);
+      setWizard({ playbook: body });
+    } catch (error) {
+      setFeedback({ ok: false, text: (error as Error).message });
+    } finally {
+      setOpening(undefined);
+    }
+  }
+
   const list = Array.isArray(data) ? data : [];
+  const disabled = Boolean(wizard || opening || busy);
   return (
     <>
-      <div className="titlerow"><h1>Playbooks</h1></div>
+      <div className="titlerow">
+        <h1>Playbooks</h1>
+        <span className="sp" />
+        <button className="primary" disabled={disabled} onClick={(event) => {
+          opener.current = event.currentTarget;
+          setFeedback(null);
+          setWizard({});
+        }}>New playbook</button>
+      </div>
       <p className="sub">Stored in the controller. A broken playbook cannot be applied; the reasons say what to fix.</p>
       <Banner error={error} />
       <Notice n={note} />
+      <Notice n={feedback} />
+      {wizard && <PlaybookWizard playbook={wizard.playbook} onCancel={() => setWizard(undefined)} onSave={(saved) => {
+        setWizard(undefined);
+        setFeedback({ ok: true, text: `Saved ${saved.id} · v${saved.version}` });
+        void reload();
+      }} />}
       {list.length === 0 && <div className="empty">No playbooks loaded.</div>}
       {list.map((p) => (
-        <section className="card" key={p.id}>
+        <section className="card playbook-card" key={p.id}>
           <div className="cardhead">
             <h2 className="id" style={{ fontFamily: "var(--mono)", fontSize: 14 }}>{p.id}</h2>
             {p.version != null && <span className="muted">v{p.version}</span>}
             <Pill kind={p.readiness === "ready" ? "ok" : "bad"}>{p.readiness}</Pill>
             <span className="sp" />
-            <Btn busy={busy} label={`Check ${p.id}`} onClick={() => run(`Check ${p.id}`, `playbooks/${p.id}/check`, {}, reload)}>Run readiness check</Btn>
+            <button disabled={disabled} aria-label={`Edit ${p.id}`} onClick={(event) => {
+              opener.current = event.currentTarget;
+              void edit(p.id);
+            }}>{opening === p.id ? "Opening…" : "Edit"}</button>
+            <Btn busy={busy} disabled={disabled} label={`Check ${p.id}`} onClick={() => run(`Check ${p.id}`, `playbooks/${p.id}/check`, {}, reload)}>Run readiness check</Btn>
           </div>
           {p.description && <p style={{ maxWidth: "80ch", marginBottom: 12 }}>{p.description}</p>}
           {p.reasons.length > 0 && <ul className="plain" style={{ color: "var(--bad-ink)", marginBottom: 12 }}>{p.reasons.map((r, i) => <li key={i}>{r}</li>)}</ul>}

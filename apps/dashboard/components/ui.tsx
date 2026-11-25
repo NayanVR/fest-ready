@@ -27,10 +27,10 @@ export function usePoll<T>(path: string | null, initial?: Loaded<T>, ms = 2000) 
 
 export type Result = { ok: boolean; status: number; json: any };
 
-// POST through the server route, which adds X-Admin-Secret. The browser never has it.
-export async function post(path: string, body: unknown): Promise<Result> {
+// Write through the server route, which adds X-Admin-Secret.
+export async function post(path: string, body: unknown, method: "POST" | "PUT" = "POST"): Promise<Result> {
   try {
-    const r = await fetch(`/api/c/${path}`, { method: "POST", body: JSON.stringify(body) });
+    const r = await fetch(`/api/c/${path}`, { method, body: JSON.stringify(body) });
     return { ok: r.ok, status: r.status, json: await r.json().catch(() => null) };
   } catch {
     return { ok: false, status: 0, json: { error: "NETWORK", message: "Dashboard server unreachable" } };

@@ -22,12 +22,31 @@ export type Incident = {
   timeline: { ts: string; actor: string; action: string; result: string }[];
 };
 export type Playbook = {
-  id: string; version?: number; owner?: string; description?: string;
-  match?: { alerts: string[]; cause: string };
-  dimension?: { name: string; values: string[] };
-  flag?: { key: string; normal: { enabled: boolean }; fallback: { enabled: boolean } };
-  segments?: { fallback: string; recovery: string };
-  recovery?: { method: string; steps: number[] };
+  id: string; version: number; owner: string; description: string;
+  match: { alerts: string[]; cause: "external" | "internal" };
+  dimension: { name: string; trait: string; label: string; values: string[] };
+  flag: {
+    key: string;
+    normal: { enabled: boolean; value?: string | number };
+    fallback: { enabled: boolean; value?: string | number };
+  };
+  segments: { fallback: string; recovery: string };
+  recovery: {
+    method: "split" | "segments";
+    steps: number[];
+    guardrail: { min_samples: number; max_error_rate: number; max_consecutive_errors: number; window: string };
+    cooldown_after_rollback: string;
+  };
+  events: {
+    dimension_field: string; identity_field: string; outcome_field: string; amount_field?: string;
+    canary_filter?: Record<string, unknown>;
+  };
+  health?: { errors: string; total: string };
+  probe: {
+    every: string; healthy_for: string; identities: Record<string, string>;
+    request: { method: string; url: string; body?: unknown };
+    expect: { healthy: { status: number }; fallback_active: { status: number } };
+  };
 };
 
 // "Other read shapes" in CONTRACTS.md §3.4.

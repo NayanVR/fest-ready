@@ -110,6 +110,25 @@ textarea { height: auto; min-height: 72px; padding: 8px 10px; resize: vertical; 
 .row > label { min-width: 180px; }
 .actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
 
+/* Playbook wizard shares the dashboard controls and recovery step treatment. */
+.playbook-card, .playbook-wizard { overflow-wrap: anywhere; }
+.playbook-wizard .cardhead { align-items: baseline; }
+.playbook-wizard .form { max-width: 760px; }
+.playbook-wizard h3 { font-size: 15px; font-weight: 500; margin: 0; align-self: flex-start; }
+.wizard-steps { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; list-style: none; padding: 0; margin: 0 0 24px; max-width: 760px; }
+.wizard-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px var(--gap); }
+.wizard-wide { grid-column: 1 / -1; }
+.wizard-fields label { overflow-wrap: anywhere; }
+.wizard-fields dd { min-width: 0; overflow-wrap: anywhere; }
+.wizard-actions { margin-top: 0; }
+.wizard-actions button:first-child { margin-right: auto; }
+@media (max-width: 520px) {
+  .wizard-steps { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 10px; }
+  .wizard-fields { grid-template-columns: minmax(0, 1fr); }
+  .wizard-actions { gap: 8px; }
+  .wizard-actions button { padding-inline: 10px; }
+}
+
 /* messages */
 .banner { background: var(--warn-bg); border: 1px solid var(--warn-line); color: var(--warn-ink); border-radius: var(--radius-control); padding: 8px 12px; font-size: 12px; line-height: 16px; }
 .notice { border-radius: var(--radius-control); padding: 8px 12px; border: 1px solid var(--border); background: var(--surface); }
