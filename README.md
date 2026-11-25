@@ -1,6 +1,6 @@
 # FestReady
 
-FestReady helps commerce teams keep orders moving when a courier or payment provider fails. It was built for India's festive shopping rush, when months of preparation come down to a few peak sales days. The same playbooks can help through Black Friday and everyday provider outages.
+FestReady helps commerce teams keep orders moving when an outage occurs. It was built for India's festive shopping rush, when months of preparation come down to a few peak sales days. The same playbooks can help through Black Friday and everyday provider outages.
 
 ## How it works
 
@@ -34,12 +34,4 @@ flowchart LR
 
 Playbooks are customizable for different parts of the business. The wizard can suggest available Flagsmith flags, metrics, alerts, labels, and event fields, and run a readiness check before saving.
 
-## What we verified
-
-- **Delivery rehearsal:** simulated courier outage and orders, live NuBi investigation, cohort-scoped Flagsmith fallback, automatic rollback, and staged recovery to 100%.
-- **Payment sandbox:** simulated provider failure, operator approval, cohort-scoped fallback, and a recovered primary probe.
-- **Voice reminder:** a live controller-triggered Sarvam call reached the operator and read the incident ID.
-
 **Future scope:** Sarvam could fetch live incident details through controller APIs and allow a verified operator to approve fallback or recovery by phone.
-
-See the [architecture and verification notes](docs/ARCHITECTURE.md) and [API contracts](docs/CONTRACTS.md) for implementation details.
