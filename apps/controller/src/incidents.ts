@@ -5,7 +5,7 @@ import { apply, warm, type FlagStateView } from "./flagsmith.ts";
 import { log } from "./log.ts";
 import { canaryStep, checkFindings, cooldownLeftMs, INVESTIGATING, parseFindings, statusOf, transition, type Event } from "./machine.ts";
 import type { FindingsResult } from "./mcp.ts";
-import { getPlaybook, isProbe, type Playbook } from "./playbooks.ts";
+import { getPlaybook, isProbe, persistPlaybook, validatePlaybook, validateWritablePlaybook, type Playbook } from "./playbooks.ts";
 import { canaryEvents, evaluateGuardrail, evidence, impact, probeStatus, type Ev, type ProbeResult } from "./recovery.ts";
 
 export type Result = { status: number; body: unknown };
@@ -13,6 +13,7 @@ const err = (status: number, error: string, message: string): Result => ({ statu
 
 type Row = {
   n: number; alert: string; state: string; owner: string | null; playbook: string | null; value: string | null;
+  playbook_snapshot: string | null;
   split: number; step_started_at: number | null; fallback_at: number | null; rolled_back_at: number | null;
   opened_at: string; mitigated_at: string | null; resolved_at: string | null; closed_at: string | null; close_note: string | null;
 };
@@ -21,6 +22,8 @@ export const incidentId = (n: number) => `INC-${String(n).padStart(4, "0")}`;
 const parseId = (id: string) => (/^INC-\d+$/.test(id) ? Number(id.slice(4)) : -1);
 const nowIso = () => new Date().toISOString();
 const getRow = (db: Database, id: string) => db.query<Row, [number]>("SELECT * FROM incidents WHERE n = ?").get(parseId(id));
+export const incidentPlaybook = (row: Pick<Row, "playbook_snapshot">): Playbook | null =>
+  row.playbook_snapshot === null ? null : JSON.parse(row.playbook_snapshot);
 const ms = (iso: string | null) => (iso === null ? null : Date.parse(iso));
 
 // ponytail: one global lock for every write (Flagsmith calls included); per-incident locks if it ever matters
@@ -52,6 +55,24 @@ export function auditRows(db: Database, incident?: string) {
     ts: r.ts, incidentId: r.incident === null ? null : incidentId(r.incident), actor: r.actor, action: r.action,
     before: p(r.before), after: p(r.after), readBack: p(r.read_back), result: r.result,
   }));
+}
+
+export function writePlaybook(db: Database, input: any, actor: string, id?: string): Result {
+  const reasons = validatePlaybook(input);
+  if (id !== undefined && input?.id !== id) reasons.push("id must match the URL");
+  if (!reasons.length) reasons.push(...validateWritablePlaybook(input));
+  if (reasons.length)
+    return { status: 422, body: { error: "INVALID_PLAYBOOK", message: "playbook validation failed", reasons } };
+
+  return db.transaction(() => {
+    const previous = getPlaybook(db, input.id);
+    if (id === undefined && previous) return err(409, "PLAYBOOK_EXISTS", `${input.id} already exists`);
+    if (id !== undefined && !previous) return err(404, "NOT_FOUND", `${id} not found`);
+    const { actor: _actor, readiness: _readiness, reasons: _reasons, ...definition } = input;
+    const pb = persistPlaybook(db, definition, (previous?.version ?? 0) + 1);
+    audit(db, null, actor, `playbook ${previous ? "updated" : "created"}: ${pb.id} v${pb.version}`, "ok");
+    return { status: previous ? 200 : 201, body: pb };
+  }).immediate();
 }
 
 // ---------- order events and probe results ----------
@@ -114,7 +135,7 @@ const title = (r: Row, pb: Playbook | null) =>
 
 export const listIncidents = (db: Database) =>
   db.query<Row, []>("SELECT * FROM incidents ORDER BY n DESC").all().map((r) => ({
-    id: incidentId(r.n), title: title(r, r.playbook ? getPlaybook(db, r.playbook) : null), status: statusOf(r.state), owner: r.owner,
+    id: incidentId(r.n), title: title(r, incidentPlaybook(r)), status: statusOf(r.state), owner: r.owner,
     alert: r.alert, playbook: r.playbook, value: r.value, openedAt: r.opened_at, closedAt: r.closed_at,
   }));
 
@@ -132,7 +153,7 @@ const LOOKBACK_MS = 5 * 60_000;
 export function getIncident(db: Database, id: string, now = Date.now()) {
   const r = getRow(db, id);
   if (!r) return null;
-  const pb = r.playbook ? getPlaybook(db, r.playbook) : null;
+  const pb = incidentPlaybook(r);
   const iid = incidentId(r.n);
   const ready = pb && r.value;
   const from = ms(r.opened_at)! - LOOKBACK_MS;
@@ -155,7 +176,7 @@ export function getIncident(db: Database, id: string, now = Date.now()) {
 export function incidentEvidence(db: Database, id: string, now = Date.now()): Result {
   const r = getRow(db, id);
   if (!r) return err(404, "NOT_FOUND", `${id} not found`);
-  const pb = r.playbook ? getPlaybook(db, r.playbook) : null;
+  const pb = incidentPlaybook(r);
   if (!pb || !r.value) return err(409, "NO_FINDINGS", "no playbook and value yet, so nothing to report on");
   const from = ms(r.opened_at)! - LOOKBACK_MS;
   const until = ms(r.closed_at) ?? now;
@@ -216,7 +237,8 @@ function submitFindings(db: Database, row: Row | null, body: any, source: "opera
   db.transaction(() => {
     db.query(`INSERT INTO findings (incident, source, playbook, value, cause, summary, evidence, nubi_url, submitted_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(open!.n, source, f.playbook, f.value, f.cause, f.summary, JSON.stringify(f.evidence), f.nubiUrl, nowIso());
-    db.query("UPDATE incidents SET state = ?, playbook = ?, value = ? WHERE n = ?").run(t.to, f.playbook, f.playbook ? f.value : null, open!.n);
+    db.query("UPDATE incidents SET state = ?, playbook = ?, value = ?, playbook_snapshot = ? WHERE n = ?")
+      .run(t.to, f.playbook, f.playbook ? f.value : null, pb ? JSON.stringify(pb) : null, open!.n);
     audit(db, open!.n, actor, f.playbook ? `findings (${source}): ${f.playbook} / ${f.value} / ${f.cause}` : `findings (${source}): no playbook fits (${f.cause})`, "ok");
   })();
   // Look up Flagsmith IDs and state now so Approve is one write + one read-back. Best effort.
@@ -264,7 +286,7 @@ function label(ev: Event, from: string, to: string, fromSplit: number, toSplit?:
 export async function act(db: Database, id: string, actor: string, ev: Event, note?: string, now = Date.now()): Promise<Result> {
   const row = getRow(db, id);
   if (!row) return err(404, "NOT_FOUND", `${id} not found`);
-  const pb = row.playbook ? getPlaybook(db, row.playbook) : null;
+  const pb = incidentPlaybook(row);
   if (row.playbook && !pb) return err(409, "UNKNOWN_PLAYBOOK", `playbook ${row.playbook} no longer exists`);
   if (ev.type === "advance" && pb)
     ev = {

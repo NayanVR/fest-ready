@@ -109,7 +109,7 @@ export function validatePlaybook(p: any): string[] {
   need("probe.every", dur, "a duration like 30s");
   need("probe.healthy_for", dur, "a duration like 5m");
   need("probe.identities", isObj, "a map of value → identity");
-  if (isObj(p.probe?.identities) && Array.isArray(p.dimension?.values)) {
+  if (isObj(p.probe?.identities) && strArr(p.dimension?.values)) {
     for (const v of p.dimension.values)
       if (!str(p.probe.identities[v])) r.push(`probe.identities is missing ${v}`);
     for (const k of Object.keys(p.probe.identities))
@@ -167,11 +167,30 @@ export function savePlaybook(db: Database, input: any): { ok: true; playbook: Pl
   const reasons = validatePlaybook(input);
   if (reasons.length) return { ok: false, reasons };
   const prev = getPlaybook(db, input.id);
-  const playbook: Playbook = { ...input, version: prev ? prev.version + 1 : 1 };
-  db.query("INSERT OR REPLACE INTO playbooks (id, version, body, updated_at) VALUES (?, ?, ?, ?)").run(
+  return { ok: true, playbook: persistPlaybook(db, input, (prev?.version ?? 0) + 1) };
+}
+
+export function persistPlaybook(db: Database, input: Omit<Playbook, "version">, version: number): Playbook {
+  const playbook: Playbook = { ...input, version };
+  db.query(`INSERT INTO playbooks (id, version, body, updated_at) VALUES (?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET version = excluded.version, body = excluded.body, updated_at = excluded.updated_at`).run(
     playbook.id, playbook.version, JSON.stringify(playbook), new Date().toISOString(),
   );
-  return { ok: true, playbook };
+  return playbook;
+}
+
+// API-managed probes can call only the configured shop order endpoint. Network-bound
+// templates must not expand credentials from the controller environment.
+export function validateWritablePlaybook(pb: Playbook): string[] {
+  const reasons: string[] = [];
+  if (pb.probe.request.method !== "POST" || pb.probe.request.url !== "${SHOP_URL}/api/orders")
+    reasons.push("probe.request must POST to ${SHOP_URL}/api/orders");
+  const envPlaceholder = /\$\{[A-Za-z_][A-Za-z0-9_]*\}/;
+  if (envPlaceholder.test(JSON.stringify(pb.probe.request.body) ?? ""))
+    reasons.push("probe.request.body must not contain environment placeholders");
+  if ([pb.segments.fallback, pb.segments.recovery].some((name) => envPlaceholder.test(name)))
+    reasons.push("segment templates must not contain environment placeholders");
+  return reasons;
 }
 
 // Imports PLAYBOOK_DIR/*.yaml only when the table is empty. An invalid seed is a startup error.

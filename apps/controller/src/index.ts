@@ -2,7 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { openDb } from "./db.ts";
 import {
   ack, act, auditRows, fault, findingsForIncident, findingsFromNubi, getIncident, incidentEvidence, listIncidents, onAlert, serial,
-  storeEvent, type Result,
+  storeEvent, writePlaybook, type Result,
 } from "./incidents.ts";
 import { log } from "./log.ts";
 import { startLoops } from "./loops.ts";
@@ -41,6 +41,11 @@ function admin(handler: (req: Req) => Promise<Response> | Response) {
 }
 
 const actor = (b: any) => (typeof b?.actor === "string" && b.actor.trim() ? b.actor.trim() : "operator");
+const save = (update: boolean) =>
+  admin(async (req) => {
+    const b = await body(req);
+    return send(await serial(() => writePlaybook(db, b, actor(b), update ? req.params.id : undefined)));
+  });
 const action = (type: "approve" | "advance" | "rollback") =>
   admin(async (req) => {
     const b = await body(req);
@@ -62,7 +67,7 @@ function logged(routes: Record<string, Handler | Record<string, Handler>>) {
     [path, typeof r === "function" ? wrap(path, r) : Object.fromEntries(Object.entries(r).map(([m, h]) => [m, wrap(path, h)]))]));
 }
 
-Bun.serve({
+const server = Bun.serve({
   port,
   routes: logged({
     "/healthz": () => json({ ok: true }),
@@ -82,12 +87,13 @@ Bun.serve({
       handleMcp(req, { listPlaybooks: () => listPlaybooks(db), submitFindings: (input) => serial(() => findingsFromNubi(db, input)) }),
 
     "/api/state": { GET: async () => json(await state(db)) },
-    "/api/playbooks": { GET: async () => json(await playbooksWithReadiness(db)) },
+    "/api/playbooks": { GET: async () => json(await playbooksWithReadiness(db)), POST: save(false) },
     "/api/playbooks/:id": {
       GET: async (req) => {
         const pb = getPlaybook(db, req.params.id);
         return pb ? json({ ...pb, ...(await readiness(db, pb)) }) : fail(404, "NOT_FOUND", `${req.params.id} not found`);
       },
+      PUT: save(true),
     },
     "/api/playbooks/:id/check": {
       POST: admin(async (req) => {
@@ -140,4 +146,4 @@ Bun.serve({
 });
 
 startLoops(db);
-log("info", "controller listening", { port, seededPlaybooks: seeded });
+log("info", "controller listening", { port: server.port, seededPlaybooks: seeded });

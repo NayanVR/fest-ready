@@ -17,6 +17,14 @@ export function openDb(path = process.env.DB_PATH || "./data/controller.db"): Da
     fallback_at INTEGER,      -- latest approve or rollback (ms): probes count from here
     rolled_back_at INTEGER,   -- latest rollback (ms): cooldown start
     opened_at TEXT NOT NULL, mitigated_at TEXT, resolved_at TEXT, closed_at TEXT, close_note TEXT)`);
+  db.transaction(() => {
+    const columns = db.query<{ name: string }, []>("PRAGMA table_info(incidents)").all();
+    if (columns.some(({ name }) => name === "playbook_snapshot")) return;
+    db.run("ALTER TABLE incidents ADD COLUMN playbook_snapshot TEXT");
+    // Before playbook writes existed, incidents used the current stored copy.
+    db.run(`UPDATE incidents SET playbook_snapshot = (SELECT body FROM playbooks WHERE id = incidents.playbook)
+      WHERE playbook IS NOT NULL`);
+  }).immediate();
   db.run(`CREATE TABLE IF NOT EXISTS findings (
     id INTEGER PRIMARY KEY AUTOINCREMENT, incident INTEGER NOT NULL,
     source TEXT NOT NULL, playbook TEXT, value TEXT, cause TEXT NOT NULL,

@@ -5,9 +5,9 @@
 //   probes have passed for `healthy_for` (checked every tick, not only after a probe), PROBE_OK → FALLBACK on a failure.
 import type { Database } from "bun:sqlite";
 import { warm } from "./flagsmith.ts";
-import { act, incidentId, probeResults, recordProbe, serial, stepGuardrail } from "./incidents.ts";
+import { act, incidentId, incidentPlaybook, probeResults, recordProbe, serial, stepGuardrail } from "./incidents.ts";
 import { log } from "./log.ts";
-import { getPlaybook, listPlaybooks, parseDuration, render, type Playbook } from "./playbooks.ts";
+import { listPlaybooks, parseDuration, render, type Playbook } from "./playbooks.ts";
 import { probeStatus } from "./recovery.ts";
 
 type Row = any;
@@ -17,14 +17,16 @@ const PROBE_TICK_MS = 1000;
 export async function guardrailTick(db: Database, now = Date.now()) {
   const rows = db.query<Row, []>("SELECT * FROM incidents WHERE state LIKE 'CANARY_%' AND step_started_at IS NOT NULL").all();
   for (const r of rows) {
-    const pb = r.playbook ? getPlaybook(db, r.playbook) : null;
+    const pb = incidentPlaybook(r);
     if (!pb || !r.value) continue;
     if (stepGuardrail(db, r, pb, now).guardrail !== "breach") continue;
     await serial(async () => {
       // Re-check inside the lock: an operator may have rolled back in the meantime.
       const fresh = db.query<Row, [number]>("SELECT * FROM incidents WHERE n = ?").get(r.n);
       if (!fresh?.state.startsWith("CANARY_")) return;
-      const g = stepGuardrail(db, fresh, pb, Date.now());
+      const current = incidentPlaybook(fresh);
+      if (!current) return;
+      const g = stepGuardrail(db, fresh, current, Date.now());
       if (g.guardrail !== "breach") return;
       await act(db, incidentId(r.n), "controller", { type: "rollback" }, `automatic rollback: ${g.breach ?? g.reason}`);
     });
@@ -38,6 +40,7 @@ export async function sendProbe(pb: Playbook, value: string): Promise<{ ok: bool
       method: req.method,
       headers: req.body === undefined ? {} : { "content-type": "application/json" },
       body: req.body === undefined ? undefined : JSON.stringify(req.body),
+      redirect: "error",
       signal: AbortSignal.timeout(5000),
     });
     await res.body?.cancel();
@@ -53,7 +56,7 @@ export async function sendProbe(pb: Playbook, value: string): Promise<{ ok: bool
 export async function probeTick(db: Database, send = sendProbe, now = () => Date.now()) {
   const rows = db.query<Row, []>("SELECT * FROM incidents WHERE state IN ('FALLBACK', 'PROBE_OK') AND fallback_at IS NOT NULL").all();
   for (const r of rows) {
-    const pb = r.playbook ? getPlaybook(db, r.playbook) : null;
+    const pb = incidentPlaybook(r);
     if (!pb || !r.value) continue;
     const results = probeResults(db, r.n, r.fallback_at);
     const last = results.at(-1);
