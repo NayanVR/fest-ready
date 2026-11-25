@@ -1,0 +1,72 @@
+// Playbook readiness (CONTRACTS §8) and overall availability for GET /api/state.
+import type { Database } from "bun:sqlite";
+import { findFeatureId, findSegmentId } from "./flagsmith.ts";
+import { countOpenIncidents, eventsSince } from "./incidents.ts";
+import { isProbe, listPlaybooks, render, type Playbook } from "./playbooks.ts";
+import type { Ev } from "./recovery.ts";
+
+const READINESS_EVENTS_MS = 10 * 60_000;
+const AVAILABILITY_MS = 5 * 60_000;
+// The dashboard polls every 2 s; Flagsmith lookups (1 + 2 per value) are cached to protect the API quota.
+const FLAGSMITH_TTL_MS = 5 * 60_000;
+const cache = new Map<string, { at: number; reasons: Promise<string[]> }>();
+
+async function flagsmithReasons(pb: Playbook): Promise<string[]> {
+  try {
+    const names = pb.dimension.values.flatMap((value) => [render(pb.segments.fallback, { value }), render(pb.segments.recovery, { value })]);
+    const [feature, ...segments] = await Promise.all([findFeatureId(pb.flag.key), ...names.map(findSegmentId)]);
+    return [
+      ...(feature === null ? [`flag ${pb.flag.key} not found in Flagsmith`] : []),
+      ...names.filter((_, i) => segments[i] === null).map((n) => `segment ${n} not found in Flagsmith`),
+    ];
+  } catch (e) {
+    return [`Flagsmith check failed: ${(e as Error).message}`];
+  }
+}
+
+// ponytail: event-based only; the PromQL `health` alternative is unverified ([VERIFY] in ARCHITECTURE §9.3)
+export function eventReasons(pb: Playbook, events: Ev[]): string[] {
+  const field = pb.events.dimension_field;
+  const seen = new Set(events.filter((x) => !isProbe(pb, x.body) && x.body[field] !== undefined && x.body[field] !== null).map((x) => String(x.body[field])));
+  return [
+    ...pb.dimension.values.filter((v) => !seen.has(v)).map((v) => `no order events for ${pb.dimension.name}=${v} in the last 10m`),
+    ...[...seen].filter((v) => !pb.dimension.values.includes(v)).map((v) => `order events have ${pb.dimension.name}=${v}, which is not in dimension.values`),
+  ];
+}
+
+export async function readiness(db: Database, pb: Playbook, fresh = false) {
+  const key = `${pb.id}@${pb.version}`;
+  let c = cache.get(key);
+  if (fresh || !c || Date.now() - c.at > FLAGSMITH_TTL_MS) cache.set(key, (c = { at: Date.now(), reasons: flagsmithReasons(pb) }));
+  const reasons = [...(await c.reasons), ...eventReasons(pb, eventsSince(db, Date.now() - READINESS_EVENTS_MS))];
+  return { readiness: reasons.length ? ("broken" as const) : ("ready" as const), reasons };
+}
+
+export const playbooksWithReadiness = (db: Database) =>
+  Promise.all(listPlaybooks(db).map(async (pb) => ({ ...pb, ...(await readiness(db, pb)) })));
+
+// success / (success + error) over the last 5 min across every playbook's cohort (its values + canary_filter),
+// probe orders excluded. All values together: no per-value breakdown. Null when there are no such events.
+export function availability(playbooks: Playbook[], events: Ev[]): number | null {
+  let ok = 0, total = 0;
+  for (const x of events) {
+    const pb = playbooks.find((p) =>
+      p.dimension.values.includes(x.body[p.events.dimension_field] as string) && !isProbe(p, x.body) &&
+      Object.entries(p.events.canary_filter ?? {}).every(([k, v]) => x.body[k] === v));
+    const outcome = pb && x.body[pb.events.outcome_field];
+    if (outcome === "success" || outcome === "error") {
+      total++;
+      if (outcome === "success") ok++;
+    }
+  }
+  return total ? Math.round((1000 * ok) / total) / 1000 : null;
+}
+
+export async function state(db: Database) {
+  const pbs = await playbooksWithReadiness(db);
+  return {
+    availability: availability(pbs, eventsSince(db, Date.now() - AVAILABILITY_MS)),
+    openIncidents: countOpenIncidents(db),
+    playbooks: { ready: pbs.filter((p) => p.readiness === "ready").length, broken: pbs.filter((p) => p.readiness === "broken").length },
+  };
+}

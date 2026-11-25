@@ -128,7 +128,7 @@ test("impact numbers", () => {
     amountFailed: F.amount_field ? 6600 : 0,
     ordersSaved: 2,
     amountSaved: F.amount_field ? 1200 : 0,
-    atRiskPerMinute: F.amount_field ? 3000 : 0, // 6000 over 2 minutes
+    atRiskPerMinute: F.amount_field ? Math.round(6000 / ((mitigated - (T0 + 1000)) / 60_000)) : 0, // 6000 from first failure to mitigation
     customersAffected: 3,
   });
   // not mitigated yet: nothing saved, rate runs to now

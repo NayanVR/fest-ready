@@ -87,7 +87,9 @@ export function impact(pb: Playbook, value: string, events: Ev[], openedMs: numb
   const end = mitigatedMs ?? now;
   const atRisk = failed.filter((e) => e.ts <= end);
   // ponytail: at least one minute in the denominator so a just-opened incident doesn't inflate the per-minute figure.
-  const minutes = Math.max(end - openedMs, 60_000) / 60_000;
+  // Measured from the first failure, so the lookback before the alert doesn't dilute it.
+  const firstFail = atRisk.reduce((m, e) => Math.min(m, e.ts), end);
+  const minutes = Math.max(end - firstFail, 60_000) / 60_000;
   return {
     ordersFailed: failed.length,
     amountFailed: sum(pb, failed),

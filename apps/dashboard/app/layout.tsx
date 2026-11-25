@@ -1,7 +1,7 @@
 import "./globals.css";
 import Nav from "@/components/Nav";
 
-export const metadata = { title: "Festive Rush ops" };
+export const metadata = { title: "FestReady ops" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

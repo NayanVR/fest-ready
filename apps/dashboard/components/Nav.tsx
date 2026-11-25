@@ -22,7 +22,7 @@ export default function Nav() {
         <svg width="26" height="26" viewBox="0 0 26 26" fill="none" stroke="#0a0a0a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <path d="M3 13h7c4 0 4-7 9-7h4M10 13c4 0 4 7 9 7h4" />
         </svg>
-        <span><b>Festive Rush</b><small>Delivery ops · demo</small></span>
+        <span><b>FestReady</b><small>Delivery ops · demo</small></span>
       </Link>
       <button className="menu" aria-expanded={open} aria-controls="side-body" onClick={() => setOpen(!open)}>Menu</button>
       <div className={`body ${open ? "open" : ""}`} id="side-body">

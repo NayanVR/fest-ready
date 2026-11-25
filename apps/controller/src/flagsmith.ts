@@ -171,6 +171,8 @@ export async function apply(pb: Playbook, value: string, change: { fallback?: bo
   const t = await resolveTargets(pb, value);
   const key = keyOf(t);
   const before = known.get(key) ?? null;
+  // A split already known to have the requested value (approve's "split stays 0") is not rewritten.
+  if (change.split !== undefined && change.split === before?.splitPercent) change = { ...change, split: undefined };
   const writeFallback = async () => {
     const uuid = await setSegmentOverride(t.featureId, t.fallbackSegmentId, change.fallback ? pb.flag.fallback : pb.flag.normal, description);
     return fallbackOf(await readOverrides(t.featureId, uuid), t).enabled;
