@@ -28,10 +28,19 @@ async function api(method: string, path: string, body?: unknown): Promise<any> {
 const project = () => `/projects/${env("FLAGSMITH_PROJECT_ID")}`;
 const environment = () => `/environments/${env("FLAGSMITH_ENV_ID")}`;
 
+async function searchFeatures(term: string): Promise<{ name: string; id: number }[]> {
+  const r = await api("GET", `${project()}/features/?search=${encodeURIComponent(term)}`);
+  return r.results;
+}
+
+export async function searchFeatureNames(term: string): Promise<string[]> {
+  const features = await searchFeatures(term);
+  return [...new Set(features.slice(0, 100).map(({ name }) => name).filter((name) => typeof name === "string"))].sort();
+}
+
 // Search is a substring match, so filter for the exact name.
 export async function findFeatureId(name: string): Promise<number | null> {
-  const r = await api("GET", `${project()}/features/?search=${encodeURIComponent(name)}`);
-  return r.results.find((f: any) => f.name === name)?.id ?? null;
+  return (await searchFeatures(name)).find((f) => f.name === name)?.id ?? null;
 }
 
 export async function findSegmentId(name: string): Promise<number | null> {

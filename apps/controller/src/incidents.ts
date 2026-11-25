@@ -5,11 +5,14 @@ import { apply, warm, type FlagStateView } from "./flagsmith.ts";
 import { log } from "./log.ts";
 import { canaryStep, checkFindings, cooldownLeftMs, INVESTIGATING, parseFindings, statusOf, transition, type Event } from "./machine.ts";
 import type { FindingsResult } from "./mcp.ts";
-import { getPlaybook, isProbe, persistPlaybook, validatePlaybook, validateWritablePlaybook, type Playbook } from "./playbooks.ts";
+import { getPlaybook, isProbe, persistPlaybook, validateWritablePlaybook, type Playbook } from "./playbooks.ts";
 import { canaryEvents, evaluateGuardrail, evidence, impact, probeStatus, type Ev, type ProbeResult } from "./recovery.ts";
 
 export type Result = { status: number; body: unknown };
-const err = (status: number, error: string, message: string): Result => ({ status, body: { error, message } });
+export const err = (status: number, error: string, message: string): Result => ({ status, body: { error, message } });
+export const invalidPlaybook = (reasons: string[]): Result => ({
+  status: 422, body: { error: "INVALID_PLAYBOOK", message: "playbook validation failed", reasons },
+});
 
 type Row = {
   n: number; alert: string; state: string; owner: string | null; playbook: string | null; value: string | null;
@@ -58,11 +61,9 @@ export function auditRows(db: Database, incident?: string) {
 }
 
 export function writePlaybook(db: Database, input: any, actor: string, id?: string): Result {
-  const reasons = validatePlaybook(input);
+  const reasons = validateWritablePlaybook(input);
   if (id !== undefined && input?.id !== id) reasons.push("id must match the URL");
-  if (!reasons.length) reasons.push(...validateWritablePlaybook(input));
-  if (reasons.length)
-    return { status: 422, body: { error: "INVALID_PLAYBOOK", message: "playbook validation failed", reasons } };
+  if (reasons.length) return invalidPlaybook(reasons);
 
   return db.transaction(() => {
     const previous = getPlaybook(db, input.id);

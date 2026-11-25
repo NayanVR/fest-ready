@@ -11,10 +11,10 @@ const seedDir = join(root, "playbooks");
 const seed: Playbook = parse(readFileSync(join(seedDir, readdirSync(seedDir)[0]!), "utf8"));
 const secret = "fixture-admin";
 
-async function startController(dbPath: string) {
+async function startController(dbPath: string, noUpstreams = false) {
   const child = Bun.spawn([process.execPath, "--no-env-file", "--preload", "./test/fixtures/playbook-api.ts", "src/index.ts"], {
     cwd: root,
-    env: { PORT: "0", DB_PATH: dbPath, PLAYBOOK_DIR: seedDir, ADMIN_SECRET: secret },
+    env: { PORT: "0", DB_PATH: dbPath, PLAYBOOK_DIR: seedDir, ADMIN_SECRET: secret, B7_FIXTURE_NO_UPSTREAMS: noUpstreams ? "1" : "0" },
     stdout: "pipe",
     stderr: "inherit",
   });
@@ -169,3 +169,94 @@ test("opening a pre-B7 database preserves the playbook used by existing incident
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("wizard discovers live fixture inputs and checks drafts without changing saved readiness", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "controller-playbook-wizard-"));
+  const path = join(dir, "controller.db");
+  let controller: Awaited<ReturnType<typeof startController>> | undefined;
+  try {
+    controller = await startController(path);
+    const { call } = controller;
+    const wizard = "/api/playbook-wizard/";
+    for (const route of ["flags", "label-values", "event-fields", "readiness", "probe"])
+      expect(await call(wizard + route, "POST", {}, null)).toMatchObject({ status: 401, body: { error: "UNAUTHORIZED" } });
+    expect(await call(wizard + "flags", "POST", { search: " " })).toMatchObject({ status: 400 });
+    expect(await call(wizard + "flags", "POST", { search: seed.flag.key.slice(0, -1) })).toEqual({
+      status: 200, body: { flags: [seed.flag.key, seed.flag.key + "_other"] },
+    });
+    expect(await call(wizard + "flags", "POST", { search: "fixture-upstream-error" })).toEqual({
+      status: 502, body: { error: "UPSTREAM_ERROR", message: "Flagsmith request failed" },
+    });
+    expect(await call(wizard + "label-values", "POST", { label: "../unsafe" })).toMatchObject({ status: 400 });
+    expect(await call(wizard + "label-values", "POST", { label: seed.dimension.label })).toEqual({
+      status: 200, body: { values: [...seed.dimension.values].sort() },
+    });
+    expect(await call(wizard + "label-values", "POST", { label: "fixture_upstream_error" })).toEqual({
+      status: 502, body: { error: "UPSTREAM_ERROR", message: "Prometheus request failed" },
+    });
+    expect(await call(wizard + "event-fields", "POST", { unexpected: true })).toMatchObject({ status: 400 });
+    expect(await call(wizard + "event-fields", "POST", {})).toEqual({ status: 200, body: { fields: [] } });
+
+    for (const value of seed.dimension.values) {
+      expect((await call("/internal/orders", "POST", { [seed.events.dimension_field]: value, fixtureKey: { nested: "private" } })).status).toBe(202);
+    }
+    expect(await call(wizard + "event-fields", "POST", {})).toEqual({
+      status: 200, body: { fields: [seed.events.dimension_field, "fixtureKey"].sort() },
+    });
+    const saved = "/api/playbooks/" + seed.id;
+    expect((await call(saved)).body.readiness).toBe("ready");
+    expect(await call(wizard + "readiness", "POST", seed)).toEqual({ status: 200, body: { readiness: "ready", reasons: [] } });
+    const draft = { ...seed, flag: { ...seed.flag, key: "missing-fixture-flag" } };
+    expect(await call(wizard + "readiness", "POST", draft)).toEqual({
+      status: 200, body: { readiness: "broken", reasons: ["flag missing-fixture-flag not found in Flagsmith"] },
+    });
+    expect((await call(saved)).body).toMatchObject({ flag: seed.flag, readiness: "ready", version: 1 });
+    expect(await call(wizard + "readiness", "POST", { ...seed, flag: { ...seed.flag, key: "fixture-upstream-error" } })).toEqual({
+      status: 502, body: { error: "UPSTREAM_ERROR", message: "Flagsmith request failed" },
+    });
+
+    const unsupported = { ...seed, recovery: { ...seed.recovery, method: "segments" } };
+    const value = seed.dimension.values[0]!;
+    for (const [route, method, payload] of [
+      ["/api/playbooks", "POST", unsupported], [saved, "PUT", unsupported],
+      [wizard + "readiness", "POST", unsupported], [wizard + "probe", "POST", { playbook: unsupported, value }],
+    ] as const) {
+      expect(await call(route, method, payload)).toMatchObject({
+        status: 422, body: { error: "INVALID_PLAYBOOK", reasons: ["recovery.method must be split"] },
+      });
+    }
+
+    expect(await call(wizard + "probe", "POST", { playbook: seed, value: "outside-cohort" })).toMatchObject({ status: 400 });
+    const probeDraft = structuredClone(seed);
+    probeDraft.probe.request.body = { ...(seed.probe.request.body as object), synthetic: false };
+    expect(await call(wizard + "probe", "POST", { playbook: probeDraft, value })).toEqual({
+      status: 200, body: { healthy: true, status: seed.probe.expect.healthy.status, error: null },
+    });
+    Object.assign(probeDraft.probe.request.body as object, { fixtureUnhealthy: true });
+    expect(await call(wizard + "probe", "POST", { playbook: probeDraft, value })).toEqual({
+      status: 200, body: { healthy: false, status: seed.probe.expect.fallback_active.status, error: "fallback_active" },
+    });
+    Object.assign(probeDraft.probe.request.body as object, { fixtureRedirect: true });
+    expect(await call(wizard + "probe", "POST", { playbook: probeDraft, value })).toEqual({
+      status: 502, body: { error: "UPSTREAM_ERROR", message: "Shop API request failed" },
+    });
+    expect((await call("/api/audit")).body).toEqual([]);
+    expect((await call("/api/incidents")).body).toEqual([]);
+    expect((await call("/api/playbooks")).body).toHaveLength(1);
+
+    await controller.stop();
+    controller = undefined;
+    controller = await startController(path, true);
+    for (const [route, payload] of [
+      ["flags", { search: seed.flag.key }], ["label-values", { label: seed.dimension.label }],
+      ["readiness", seed], ["probe", { playbook: seed, value }],
+    ] as const) {
+      expect(await controller.call(wizard + route, "POST", payload)).toMatchObject({
+        status: 503, body: { error: "DEPENDENCY_UNCONFIGURED" },
+      });
+    }
+  } finally {
+    await controller?.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+}, 15_000);

@@ -33,13 +33,14 @@ export async function guardrailTick(db: Database, now = Date.now()) {
   }
 }
 
-export async function sendProbe(pb: Playbook, value: string): Promise<{ ok: boolean; status: number | null; error: string | null }> {
+export async function sendProbe(pb: Playbook, value: string, synthetic = false): Promise<{ ok: boolean; status: number | null; error: string | null }> {
   try {
     const req = render(pb.probe.request, { value, probe_identity: pb.probe.identities[value]! });
+    const body = synthetic ? { ...(req.body as Record<string, unknown>), synthetic: true } : req.body;
     const res = await fetch(req.url, {
       method: req.method,
-      headers: req.body === undefined ? {} : { "content-type": "application/json" },
-      body: req.body === undefined ? undefined : JSON.stringify(req.body),
+      headers: body === undefined ? {} : { "content-type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
       redirect: "error",
       signal: AbortSignal.timeout(5000),
     });

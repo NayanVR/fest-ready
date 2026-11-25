@@ -8,6 +8,7 @@ import { log } from "./log.ts";
 import { startLoops } from "./loops.ts";
 import { handleMcp } from "./mcp.ts";
 import { getPlaybook, listPlaybooks, seedPlaybooks } from "./playbooks.ts";
+import { wizardEventFields, wizardFlags, wizardLabelValues, wizardProbe, wizardReadiness } from "./playbook-wizard.ts";
 import { toCsv } from "./recovery.ts";
 import { playbooksWithReadiness, readiness, state } from "./status.ts";
 
@@ -46,6 +47,8 @@ const save = (update: boolean) =>
     const b = await body(req);
     return send(await serial(() => writePlaybook(db, b, actor(b), update ? req.params.id : undefined)));
   });
+const wizard = (handler: (input: unknown) => Result | Promise<Result>) =>
+  admin(async (req) => send(await handler(await body(req))));
 const action = (type: "approve" | "advance" | "rollback") =>
   admin(async (req) => {
     const b = await body(req);
@@ -101,6 +104,11 @@ const server = Bun.serve({
         return pb ? json({ ...pb, ...(await readiness(db, pb, true)) }) : fail(404, "NOT_FOUND", `${req.params.id} not found`);
       }),
     },
+    "/api/playbook-wizard/flags": { POST: wizard(wizardFlags) },
+    "/api/playbook-wizard/label-values": { POST: wizard(wizardLabelValues) },
+    "/api/playbook-wizard/event-fields": { POST: wizard((input) => wizardEventFields(db, input)) },
+    "/api/playbook-wizard/readiness": { POST: wizard((input) => wizardReadiness(db, input)) },
+    "/api/playbook-wizard/probe": { POST: wizard(wizardProbe) },
     "/api/fault": { POST: admin(async (req) => send(await fault(db, await body(req)))) },
 
     "/api/incidents": { GET: () => json(listIncidents(db)) },

@@ -12,16 +12,12 @@ const FLAGSMITH_TTL_MS = 5 * 60_000;
 const cache = new Map<string, { at: number; reasons: Promise<string[]> }>();
 
 async function flagsmithReasons(pb: Playbook): Promise<string[]> {
-  try {
-    const names = pb.dimension.values.flatMap((value) => [render(pb.segments.fallback, { value }), render(pb.segments.recovery, { value })]);
-    const [feature, ...segments] = await Promise.all([findFeatureId(pb.flag.key), ...names.map(findSegmentId)]);
-    return [
-      ...(feature === null ? [`flag ${pb.flag.key} not found in Flagsmith`] : []),
-      ...names.filter((_, i) => segments[i] === null).map((n) => `segment ${n} not found in Flagsmith`),
-    ];
-  } catch (e) {
-    return [`Flagsmith check failed: ${(e as Error).message}`];
-  }
+  const names = pb.dimension.values.flatMap((value) => [render(pb.segments.fallback, { value }), render(pb.segments.recovery, { value })]);
+  const [feature, ...segments] = await Promise.all([findFeatureId(pb.flag.key), ...names.map(findSegmentId)]);
+  return [
+    ...(feature === null ? [`flag ${pb.flag.key} not found in Flagsmith`] : []),
+    ...names.filter((_, i) => segments[i] === null).map((n) => `segment ${n} not found in Flagsmith`),
+  ];
 }
 
 // ponytail: event-based only; the PromQL `health` alternative is unverified ([VERIFY] in ARCHITECTURE §9.3)
@@ -37,9 +33,24 @@ export function eventReasons(pb: Playbook, events: Ev[]): string[] {
 export async function readiness(db: Database, pb: Playbook, fresh = false) {
   const key = `${pb.id}@${pb.version}`;
   let c = cache.get(key);
-  if (fresh || !c || Date.now() - c.at > FLAGSMITH_TTL_MS) cache.set(key, (c = { at: Date.now(), reasons: flagsmithReasons(pb) }));
-  const reasons = [...(await c.reasons), ...eventReasons(pb, eventsSince(db, Date.now() - READINESS_EVENTS_MS))];
+  if (fresh || !c || Date.now() - c.at > FLAGSMITH_TTL_MS) {
+    const reasons = flagsmithReasons(pb).catch(() => ["Flagsmith check failed"]);
+    cache.set(key, (c = { at: Date.now(), reasons }));
+  }
+  return readinessResult(db, pb, await c.reasons);
+}
+
+function readinessResult(db: Database, pb: Playbook, flagReasons: string[]) {
+  const reasons = [...flagReasons, ...eventReasons(pb, eventsSince(db, Date.now() - READINESS_EVENTS_MS))];
   return { readiness: reasons.length ? ("broken" as const) : ("ready" as const), reasons };
+}
+
+export const draftReadiness = async (db: Database, pb: Playbook) => readinessResult(db, pb, await flagsmithReasons(pb));
+
+export function recentEventFields(db: Database): string[] {
+  return db.query<{ key: string }, [number]>(`SELECT DISTINCT field.key FROM
+    (SELECT body FROM order_events WHERE received_at >= ? ORDER BY received_at DESC, id DESC LIMIT 500) AS recent,
+    json_each(recent.body) AS field ORDER BY field.key`).all(Date.now() - READINESS_EVENTS_MS).map(({ key }) => key);
 }
 
 export const playbooksWithReadiness = (db: Database) =>

@@ -16,6 +16,7 @@ const broken = (mutate: (p: any) => void) => {
 
 test("seed playbook is valid", () => {
   expect(validatePlaybook(seed())).toEqual([]);
+  expect(broken((p) => (p.recovery.method = "segments"))).toEqual([]);
 });
 
 test("platform limits cannot be loosened", () => {

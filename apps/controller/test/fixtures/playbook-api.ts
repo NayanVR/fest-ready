@@ -16,12 +16,26 @@ const fixture = Bun.serve({
   port: 0,
   async fetch(req) {
     const { pathname, searchParams } = new URL(req.url);
-    if (pathname === "/api/orders" && req.method === "POST")
+    if (pathname === "/api/orders" && req.method === "POST") {
+      const body = await req.json();
+      if (body.fixtureRedirect) return new Response(null, { status: 307, headers: { Location: "/fixture/redirect-target" } });
+      if (body.fixtureUnhealthy || body.synthetic !== true)
+        return new Response("private fixture response", { status: seed.probe.expect.fallback_active.status });
       return new Response(null, { status: seed.probe.expect.healthy.status });
+    }
+    if (pathname === "/fixture/redirect-target") return new Response(null, { status: seed.probe.expect.healthy.status });
+    if (pathname === `/api/v1/label/${seed.dimension.label}/values` && searchParams.get("limit") === "100")
+      return Response.json({ status: "success", data: [...seed.dimension.values].reverse().concat(seed.dimension.values) });
+    if (pathname === "/api/v1/label/fixture_upstream_error/values")
+      return new Response("private fixture response", { status: 500 });
     if (req.headers.get("Authorization") !== "Api-Key fixture-management")
       return Response.json({}, { status: 401 });
-    if (pathname === "/api/v1/projects/1/features/")
-      return Response.json({ results: searchParams.get("search") === seed.flag.key ? [{ id: 1, name: seed.flag.key }] : [] });
+    if (pathname === "/api/v1/projects/1/features/") {
+      const term = searchParams.get("search") ?? "";
+      if (term === "fixture-upstream-error") return new Response("private fixture response", { status: 500 });
+      const features = [{ id: 2, name: seed.flag.key + "_other" }, { id: 1, name: seed.flag.key }];
+      return Response.json({ results: features.filter(({ name }) => name.includes(term)) });
+    }
     if (pathname === "/api/v1/projects/1/segments/")
       return Response.json({ results: names.map((name, i) => ({ name, id: i + 1 })).filter(({ name }) => name === searchParams.get("q")) });
     const segment = /^\/api\/v1\/projects\/1\/segments\/(\d+)\/$/.exec(pathname);
@@ -50,10 +64,13 @@ const fixture = Bun.serve({
 });
 
 const upstream = fixture.url.origin;
-process.env.SHOP_URL = upstream;
-process.env.FLAGSMITH_MGMT_TOKEN = "fixture-management";
-process.env.FLAGSMITH_PROJECT_ID = "1";
-process.env.FLAGSMITH_ENV_ID = "1";
+if (process.env.B7_FIXTURE_NO_UPSTREAMS !== "1") {
+  process.env.SHOP_URL = upstream;
+  process.env.PROMETHEUS_URL = upstream;
+  process.env.FLAGSMITH_MGMT_TOKEN = "fixture-management";
+  process.env.FLAGSMITH_PROJECT_ID = "1";
+  process.env.FLAGSMITH_ENV_ID = "1";
+}
 
 const networkFetch = globalThis.fetch;
 globalThis.fetch = Object.assign(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
