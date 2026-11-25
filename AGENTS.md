@@ -43,7 +43,7 @@ Edit only your human's folders. If the other side doesn't match the contract, st
 - The controller does not diagnose. No recommendation and no Approve until valid findings arrive (MCP `submit_findings`, or the operator form marked `source: "operator"`).
 - Never guess Flagsmith Admin API paths. Use `docs/CONTRACTS.md` §5; if a call is marked [VERIFY], stop and ask.
 - Never write, paraphrase or simulate NudgeBee/NuBi output. Store and show NuBi's `summary` verbatim.
-- The controller never advances a recovery step on its own. Advance is operator-only; rollback is automatic.
+- Starting recovery (PROBE_OK → first step) is operator-only. Later steps advance automatically only if the playbook sets `recovery.auto_advance: true` (the demo playbook does); without it, advance is operator-only too. Rollback is always automatic and wins over advance.
 - No service contains failure logic for a specific city. Faults come only from partner-mock's outage switch.
 - Never put `customerId` or `orderId` in a metric label.
 - Secrets come from env vars only. Never commit `.env`. `FLAGSMITH_MGMT_TOKEN` is used only in the controller; `ADMIN_SECRET` never reaches the browser.
@@ -62,6 +62,8 @@ Edit only your human's folders. If the other side doesn't match the contract, st
 - **Wait by polling** (`until <check>; do sleep 3; done` with a deadline of a few minutes), not long blind sleeps; report progress between polls.
 - **Long-running helpers (tunnels, port-forwards) belong in the human's terminal**, not in an agent session (agent background tasks stop after 2 h).
 - **Secrets:** keys go in `.env` only (git-ignored); check `git diff --cached` for key material before committing.
+- **Lessons from 25 Nov:** the NudgeBee SSH tunnel can drop, and the agent then drops the alert event silently. Check `kubectl -n nudgebee logs deploy/nudgebee-forager-nudgebee-forager-chart --since=3m | grep refused`; re-send the alert by deleting the alertmanager pod. `bun run preflight` (in `apps/controller`) checks this.
+- **Lessons from 25 Nov (cont.):** the old KinD cluster survived overnight. `make up` reuses it and does not restart unchanged deployments, so `rollout restart` partner-mock and dashboard after rebuilding their images.
 
 ## Working style
 

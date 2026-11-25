@@ -2,7 +2,7 @@
 
 Agents: read `AGENTS.md` (Start here + Lessons) first; build tasks are in `WORK.md` → Prompts.
 
-**25 Nov:** the code is rebuilt from scratch in a new project with the same names, paths, ports and Makefile targets. `infra/nudgebee/*` (scripts, shim manifest, NuBi config, automation) is created verbatim from [`FILES.md`](FILES.md) at setup, so every command here still applies once A1–A6 and B2–B6 are done. Sections 0–2 cover the setup that is *kept* (NudgeBee, Sarvam, Flagsmith); the timings in §4 are from the 24 Nov build and are the target for the rebuild.
+**25 Nov:** the code is rebuilt from scratch in a new project with the same names, paths, ports and Makefile targets. `infra/nudgebee/*` (scripts, shim manifest, NuBi config, automation) is created verbatim from [`FILES.md`](FILES.md) at setup, so every command here still applies once A1–A6 and B2–B6 are done. Sections 0–2 cover the setup that is *kept* (NudgeBee, Sarvam, Flagsmith); the timings in §4 are from the 24 Nov build and are the target for the rebuild (the recovery rows are from the 25 Nov cluster run).
 
 What to run, in order, on the **demo Mac (Nayan's)**. Every step here was done for real on 24 Nov evening; the full chain worked with no human input: outage on b → alert (~90 s) → NudgeBee automation → NuBi investigates → `submit_findings` over MCP (~4 min later) → incident page shows NuBi's findings + Approve.
 
@@ -14,6 +14,7 @@ What to run, in order, on the **demo Mac (Nayan's)**. Every step here was done f
 | Cluster | `kind get clusters` → `rehearsal` | `make up` creates it if missing (on 25 Nov it is recreated from scratch) |
 | NudgeBee VM is running | `$GCLOUD compute instances list` → `instance-20261124-125212` RUNNING | NudgeBee server, Sarvam shim and LLM config live there |
 | `.env` is complete | has `FLAGSMITH_*`, `ADMIN_SECRET`, `NUDGEBEE_*`, `GCLOUD` | Agent keys are only in `.env` (git-ignored) |
+| Preflight | `bun run preflight` in `apps/controller` | Read-only check of the clean state and NudgeBee reachability |
 
 ## 1. Bring the stack up
 
@@ -56,12 +57,14 @@ kubectl --context kind-rehearsal -n shop delete pod -l app=controller   # fresh 
 kubectl --context kind-rehearsal -n shop scale deploy/shop-api --replicas=1
 make load-start
 ```
+- Log in to the dashboard (`localhost:3000`) as `admin` / `admin` (or sign up). Every page and `/api/c` need a session, and every click is logged under the logged-in name. Users live in the dashboard's memory: after a dashboard restart or `rollout restart` the sign-ups are gone and only `admin` is re-seeded, so log in again.
+- If NuBi stays silent after the alert: the NudgeBee SSH tunnel may have dropped, and the agent then drops the alert event silently. Check `kubectl --context kind-rehearsal -n nudgebee logs deploy/nudgebee-forager-nudgebee-forager-chart --since=3m | grep refused`, restart `tunnels.sh`, and re-send the alert by deleting the alertmanager pod.
 - Flagsmith must be normal: Mumbai fallback override **on** (= delivery on), split 0. Check the dashboard Overview, or run `bun --env-file=../../.env scripts/check-flagsmith.ts city-delivery-fallback mumbai` in `apps/controller` (B2's check script; it resets at the end).
 - Don't hand-edit Flagsmith segments while the controller runs. Don't touch the three probe identity overrides (`cust-*-0001`).
 
 ## 4. The run and its real timings (24 Nov)
 
-Full rehearsal on 24 Nov (18:11–18:56 UTC): approve → probe → 5/10/50% → outage → automatic rollback in 8 s → cooldown refused Advance → 5/10/50/100% → Resolved → Closed; Flagsmith ended normal. Demo values since then: load 20 orders/s (`infra/k8s/load-generator.yaml`), `min_samples` 10, `window` 20s, `healthy_for` 60s, probe every 10s, cooldown 60s (seed playbook; a fresh controller DB re-seeds them).
+Full rehearsal on 24 Nov (18:11–18:56 UTC): approve → probe → 5/10/50% → outage → automatic rollback in 8 s → cooldown refused Advance → 5/10/50/100% → Resolved → Closed; Flagsmith ended normal. On 25 Nov the playbook got `recovery.auto_advance: true`: the operator clicks **Start recovery at 5%** once and the controller advances the rest. If a playbook lacks the flag, Advance is a click per step again. Demo values since then: load 20 orders/s (`infra/k8s/load-generator.yaml`), `min_samples` 10, `window` 20s, `healthy_for` 60s, probe every 10s, cooldown 60s (seed playbook; a fresh controller DB re-seeds them).
 
 
 | Step | Who | Time from outage |
@@ -72,9 +75,10 @@ Full rehearsal on 24 Nov (18:11–18:56 UTC): approve → probe → 5/10/50% →
 | NuBi findings appear on the incident page (verbatim) | automatic (NudgeBee automation) | ~5–6 min |
 | Approve → **Mitigated** (Mumbai shows pickup only) | operator | — |
 | Clear the outage; probe healthy for `healthy_for` (60 s) → PROBE_OK | automatic | +1 m |
-| Advance 5% → 10% → 50% → 100% → Resolved (each needs 10 canary orders + 20 s window) | operator | ~30–60 s per step |
-| Optional: outage again during a canary step → **automatic rollback**, then 60 s cooldown | automatic | ~8 s (measured at 50%) |
-| 100% → Resolved → Close with a note | operator | — |
+| **Start recovery at 5%** (the one recovery click) | operator | PROBE_OK ~60–70 s after clearing the outage |
+| 5% → 10% → 50% → 100% → Resolved (fallback off); no Advance clicks, each step needs 10 canary orders + 20 s window | automatic (`recovery.auto_advance`, audit "automatic advance: guardrail passed") | ~166 s for the whole ladder (25 Nov) |
+| Optional: outage again during a canary step → **automatic rollback**, then 60 s cooldown | automatic | 2 s (measured at 50%, 25 Nov; 8 s on 24 Nov) |
+| Close with a note | operator | — |
 
 The incident stays **Investigating** after NuBi's findings arrive: that's by design (ARCHITECTURE §9.4). It moves to Mitigated only when a human clicks Approve.
 
@@ -90,6 +94,8 @@ NuBi takes ~4 min to investigate. Fill that time in the pitch (explain the playb
 | Approve slow | Flagsmith latency; it shows "working…", wait ≤ 10 s |
 | Alert never fires | `make load-start` running? shop-api scaled to 1? |
 | Overview shows no incidents (old ones gone) | The controller restarted; its DB is `emptyDir`. Expected after a reset; never restart it mid-demo |
+| Dashboard redirects to `/login` or API calls return 401 | Session expired (12 h) or the dashboard restarted: log in again (`admin` / `admin`) |
+| After rebuilding images the old behaviour is still there | `make up` reuses the cluster and does not restart unchanged deployments: `kubectl --context kind-rehearsal -n providers rollout restart deploy/partner-mock`, and `-n shop rollout restart deploy/dashboard` |
 | Probe healthy but Advance stays locked well past `healthy_for` | Seen once on 24 Nov after a rollback; the B5 prompt asks for a test that prevents it. Wait, or say so; don't restart the controller |
 | NuBi investigation fails / empty replies | VM `llm-server` logs show `stopReason":"length"` → Sarvam shim bypassed; check LLM endpoint = `http://sarvam-shim.festive-shim.svc/v1` |
 | NuBi investigates but no findings | Automation v3 Active? Account Context `festive-rush-recovery` present on `demo-mac`? |

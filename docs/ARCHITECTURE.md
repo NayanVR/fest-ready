@@ -22,7 +22,7 @@ NudgeBee can diagnose, and Flagsmith can switch a code path for a segment. Neith
 
 1. **A playbook catalog, which is the contract between the AI and production.** NuBi can only choose from fallbacks the business has approved in advance. The controller validates every proposal, and the AI never touches Flagsmith directly.
 2. **A limited blast radius.** Only the affected segment moves to the fallback.
-3. **A guarded way back.** Exposure goes 5 → 10 → 50 → 100, and each step is checked against real business results. Advancing needs a human; rollback is automatic.
+3. **A guarded way back.** Exposure goes 5 → 10 → 50 → 100, and each step is checked against real business results. A human starts recovery; the steps and rollback are automatic.
 4. **Business context the AI doesn't have.** The controller sees individual orders and customers, so it can show orders and money lost and saved, detect on its own that the provider has recovered, and produce an evidence pack for the vendor.
 5. **Readiness.** Playbooks are checked against Flagsmith and Prometheus all the time, so a broken fallback shows up before the rush instead of during it.
 
@@ -43,7 +43,7 @@ NudgeBee can diagnose, and Flagsmith can switch a code path for a segment. Neith
 | 5. Findings                | NuBi calls `submit_findings` over MCP: playbook `city-delivery-fallback`, value `mumbai`, cause `external`                               | Incident page shows NuBi's own summary, the validated playbook and an **Approve** button                                   |
 | 6. Isolate                 | Operator approves → Flagsmith fallback for the Mumbai segment only                                                                       | Mumbai shows **pickup only**; BLR/DEL still offer delivery. The alert resolves. "Orders saved by fallback" starts counting |
 | 7. Provider recovers       | `make outage-clear P=b`. The controller's probe sees provider b healthy for 5 minutes                                                    | "Provider b looks healthy. Start recovery?"                                                                                |
-| 8. Gradual recovery        | Flagsmith % split brings delivery back: **5% → 10% → 50% → 100%**. Each step needs a passing guardrail, then the operator clicks Advance | Mumbai delivery share rises in steps                                                                                       |
+| 8. Gradual recovery        | Flagsmith % split brings delivery back: **5% → 10% → 50% → 100%**. The operator starts recovery at 5% once; each later step advances by itself when its guardrail passes | Mumbai delivery share rises in steps                                                                                       |
 | 9. (Wow moment) Regression | Outage injected again during the 10% step                                                                                                | Controller detects the breach and sets the split to 0% automatically. The same ticket goes back to Mitigated               |
 | 10. Close                  | Recover to 100%, export the provider evidence pack, close with a note                                                                    | Time to mitigate, time to recover, orders and ₹ saved                                                                      |
 
@@ -177,10 +177,11 @@ A **generic engine**. It knows nothing about cities, couriers or this store; eve
   - shop-api, for probe orders.
   - partner-mock, for the demo outage button.
   - Optionally Prometheus.
-- **Runs two loops:** the guardrail loop, which handles automatic rollback, and the provider probe loop, which detects recovery.
+- **Runs two loops:** the guardrail loop, which handles automatic rollback and (if the playbook sets `recovery.auto_advance`) automatic step advance, and the provider probe loop, which detects recovery.
 
 ### 5.5 `dashboard` (Next.js)
 
+- **Login:** every page, `/api/c` and `/api/shop` need a session (`proxy.ts`); only `/login`, `/api/auth/*` and `/healthz` are open. Seed account `admin`/`admin`; sign-up is allowed. Users live in the dashboard's memory (lost on a dashboard restart; `admin` is re-seeded). The session is a signed cookie keyed by `ADMIN_SECRET`. The server route sets `actor` (and `owner` on ack) in every write from the session, so the audit name is the logged-in user, never something the browser sends.
 - **Every ops panel reads from the controller API.** The browser never talks to Prometheus, Flagsmith or partner-mock. Write actions go through a Next.js server route that adds the admin secret, so the secret never reaches the browser.
 - **Live updates:** panels poll the controller every 2 seconds. No websockets.
 - **Charts:** simple CSS bars. For real metric graphs, link out to Grafana.
@@ -190,7 +191,7 @@ A **generic engine**. It knows nothing about cities, couriers or this store; eve
   - **Incident page** `/incidents/INC-xxxx`:
     - status, a link to the NuBi investigation, and NuBi's summary (verbatim);
     - the validated playbook with **Approve**, and the findings form (safety net);
-    - the recovery panel: split %, observed share, samples, guardrail result, **Advance** (enabled only when the guardrail passes) and **Rollback**;
+    - the recovery panel: split %, observed share, samples, guardrail result, **Start recovery** (enabled when the probe is healthy and no cooldown is left; later steps advance by themselves if the playbook allows, and the button can still advance by hand when the guardrail passes) and **Rollback**; the FestReady mascot shows the state (alert while Investigating, calm when Mitigated, working while Recovering, happy when Resolved);
     - business impact, the provider probe, the timeline, evidence export, and **Close** (requires a note).
   - **Playbooks:** list with Ready/Broken; create and edit (P2 wizard).
   - **Storefront:** pick a demo customer from a fixed list of IDs per city, see the options, place an order.
@@ -357,10 +358,10 @@ stateDiagram-v2
     FINDINGS --> FALLBACK: operator approves
     FALLBACK --> PROBE_OK: provider probe healthy for healthy_for
     PROBE_OK --> CANARY_5: operator starts recovery
-    CANARY_5 --> CANARY_10: guardrail pass + operator Advance
-    CANARY_10 --> CANARY_50: guardrail pass + operator Advance
-    CANARY_50 --> CANARY_100: guardrail pass + operator Advance
-    CANARY_100 --> NORMAL: verify + resolve
+    CANARY_5 --> CANARY_10: guardrail pass (automatic if auto_advance, else operator Advance)
+    CANARY_10 --> CANARY_50: guardrail pass (automatic if auto_advance, else operator Advance)
+    CANARY_50 --> CANARY_100: guardrail pass (automatic if auto_advance, else operator Advance)
+    CANARY_100 --> NORMAL: guardrail pass (automatic if auto_advance, else operator) → verify + resolve
     CANARY_5 --> FALLBACK: breach → split 0%
     CANARY_10 --> FALLBACK: breach → split 0%
     CANARY_50 --> FALLBACK: breach → split 0%
@@ -368,7 +369,7 @@ stateDiagram-v2
     PROBE_OK --> FALLBACK: probe fails again
 ```
 
-Steps come from the playbook; 5/10/50/100 is the demo playbook.
+Steps come from the playbook; 5/10/50/100 is the demo playbook. Starting recovery (PROBE_OK → CANARY_5) is always an operator click; a breach always wins over an advance.
 
 ### 9.2 Guardrails (demo values, not production SLOs)
 
@@ -376,7 +377,7 @@ Steps come from the playbook; 5/10/50/100 is the demo playbook.
 - **Minimum sample:** `min_samples` per step (demo: 20). Below that, wait. Never advance on too little data.
 - **Breach:** error rate above `max_error_rate` (5%), OR `max_consecutive_errors` (3) errors in a row.
 - **Observation window:** `window` (60 s) per step, with `cooldown_after_rollback` after a rollback.
-- **Rollback is automatic; advancing is operator-gated.** Advance is enabled only after the minimum sample is reached and the guardrail passes. The controller never advances on its own. UI and pitch say: "advance: operator · rollback: automatic".
+- **Start: operator; steps and rollback: automatic.** Starting recovery needs a human click. Advancing a step is allowed only after the minimum sample is reached and the guardrail passes. If the playbook sets `recovery.auto_advance: true` (the demo playbook does), the guardrail loop makes that advance itself (actor `controller`, audit "automatic advance: guardrail passed"), through 100% to Resolved (fallback off). Without the flag, every advance is an operator click. Rollback is always automatic and is checked first. UI and pitch say: "start: operator · steps & rollback: automatic".
 - Every action is idempotent and audited (actor, before/after flag state, result). After each change, read the flag back and run one probe order to confirm.
 
 ### 9.3 Playbook format
@@ -409,6 +410,7 @@ recovery:
       window: 20s,
     }
   cooldown_after_rollback: 60s
+  auto_advance: true # operator starts recovery once; later steps advance when the guardrail passes
 events:
   dimension_field: city
   identity_field: customerId
@@ -437,8 +439,9 @@ probe:
 **Platform safety rules no playbook can change:**
 
 - The initial fallback always needs human approval.
-- Advance always needs a human click.
-- Rollback is always automatic.
+- Starting recovery always needs a human click.
+- Steps advance automatically only if the playbook sets `recovery.auto_advance`; without it, advance needs a human click too.
+- Rollback is always automatic, and it wins over advance.
 - `min_samples` ≥ 10.
 - Steps must increase, end at 100, and start at ≤ 10.
 - `max_error_rate` ≤ 0.2.
@@ -617,12 +620,12 @@ Who does which check is in [`WORK.md`](WORK.md).
 
 **Status from the 24 Nov rehearsal (re-check each item after the 25 Nov rebuild):**
 
-- _Implemented and verified:_ provider outage → `DeliveryAvailabilityLow` alert → controller incident and NudgeBee event; NudgeBee automation → NuBi (Sarvam) investigates → `submit_findings` over MCP, no human input (~4 min); operator Approve → Flagsmith fallback for Mumbai only; probe; operator-approved canary 5/10/50/100%; automatic rollback on breach (8 s at 50%) and on alert re-fire; cooldown; resolve and close; impact numbers; evidence JSON/CSV; audit of every action with Flagsmith read-back.
+- _Implemented and verified:_ provider outage → `DeliveryAvailabilityLow` alert → controller incident and NudgeBee event; NudgeBee automation → NuBi (Sarvam) investigates → `submit_findings` over MCP, no human input (~4 min); operator Approve → Flagsmith fallback for Mumbai only; probe; operator-started canary 5/10/50/100% (24 Nov: each step by operator click; 25 Nov: the ladder advances automatically after the operator starts it, 5→10→50→100→Resolved in ~166 s, with automatic rollback at 50% in 2 s); automatic rollback on breach (8 s at 50%) and on alert re-fire; cooldown; resolve and close; impact numbers; evidence JSON/CSV; audit of every action with Flagsmith read-back.
 - _Implemented with simulated input:_ the outage itself (partner-mock switch) and all orders (load generator).
 - _Implemented, not yet run for real:_ PromQL health (the controller uses order events), value-type playbooks.
 - _Proposed:_ playbook editing API and wizard (`POST`/`PUT /api/playbooks` not built), readiness drills, Sarvam win-back messages, payments playbook, multi-tenant.
 
-Never present a hand-written diagnosis as NuBi output. Findings entered through the form are labelled `source: operator`. Never call a step "automatic" if a human clicked it.
+Never present a hand-written diagnosis as NuBi output. Findings entered through the form are labelled `source: operator`. Never call a step "automatic" if a human clicked it: Approve and Start recovery are human clicks; the later steps are automatic only with `recovery.auto_advance`.
 
 ---
 
@@ -631,7 +634,7 @@ Never present a hand-written diagnosis as NuBi output. Findings entered through 
 Decided:
 
 1. Local evaluation, ~5 s refresh (§8), pending checks 9 and 11.
-2. Canary advance is operator-gated; rollback is automatic (§9.2).
+2. Starting recovery is operator-gated; with the playbook's `recovery.auto_advance` the steps advance automatically; rollback is always automatic (§9.2).
 3. A separate page per incident (§9.4).
 4. Yashasvi = A (business + cluster), Nayan = B (control side) ([`WORK.md`](WORK.md)).
 5. The whole project is built on 24 Nov; the event day is for running, polishing, recording and pitching ([`WORK.md`](WORK.md)).
