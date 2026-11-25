@@ -1,0 +1,19 @@
+{
+  "name": "shop-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "bun": "1.x"
+  },
+  "scripts": {
+    "dev": "bun --watch src/server.ts",
+    "start": "bun src/server.ts",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "express": "^5.3.0",
+    "flagsmith-nodejs": "^8.1.2",
+    "prom-client": "^15.1.3"
+  }
+}
