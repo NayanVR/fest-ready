@@ -9,4 +9,13 @@ try {
   }
 } catch {}
 
-export default { agentRules: false }; // stop `next dev` re-creating apps/dashboard/AGENTS.md (repo root has the only one)
+export default {
+  agentRules: false,
+  async redirects() {
+    return [
+      { source: "/storefront", destination: "/store", permanent: false },
+      { source: "/demo", destination: "/store/presenter", permanent: false },
+      { source: "/payments", destination: "/store/presenter", permanent: false },
+    ];
+  },
+}; // stop `next dev` re-creating apps/dashboard/AGENTS.md (repo root has the only one)

@@ -84,8 +84,6 @@ export default function PaymentSimulation() {
 
   return (
     <>
-      <div className="titlerow"><h1>Payment simulation</h1></div>
-      <p className="sub">Simulate a provider outage and test routing with a synthetic customer.</p>
       <section className="card" aria-labelledby="payment-providers">
         <div className="cardhead"><h2 id="payment-providers">Mock providers</h2></div>
         {statusError && <div className="notice err" role="alert">{statusError} <button className="link" type="button" disabled={!!busy}

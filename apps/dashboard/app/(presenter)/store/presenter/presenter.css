@@ -1,0 +1,20 @@
+/* Presenter control room: compact, ledger look from the ops tokens, topped by a dark bar and a DEMO badge. */
+.pres { min-height: 100vh; background: var(--ground); }
+.pres-bar { display: flex; align-items: center; gap: 16px; padding: 14px 24px; background: #0a0a0a; color: #fff; flex-wrap: wrap; }
+.pres-bar .mc { --mc-ink: #fff; --mc-bg: #0a0a0a; }
+.pres-bar h1 { font-size: 20px; line-height: 26px; font-weight: 500; }
+.pres-bar p { color: #b6bcc6; font-size: 13px; line-height: 18px; margin-top: 2px; }
+.demo-badge { background: #f2c200; color: #0a0a0a; font-weight: 700; letter-spacing: 0.08em; font-size: 13px; line-height: 1; padding: 7px 10px; border-radius: 4px; }
+.pres-bar nav { margin-left: auto; display: flex; gap: 20px; }
+.pres-bar nav a { color: #e3e6eb; text-decoration: none; padding: 8px 0; }
+.pres-bar nav a:hover { color: #fff; text-decoration: underline; }
+.pres-main { padding: 24px; display: grid; gap: 24px; align-items: start; max-width: 1400px; }
+.pres-main.two { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.3fr); }
+.pres-main section:first-child .row { flex-wrap: nowrap; gap: 10px; }
+.pres-main section > h2 { font-size: 18px; line-height: 24px; }
+.pres-main .hint { color: var(--muted); margin: 2px 0 14px; max-width: 60ch; }
+.pres-main section > .card + .card, .pres-main section > .notice + .card { margin-top: var(--gap); }
+.pres-main .cols { margin-top: var(--gap); }
+@media (max-width: 1000px) { .pres-main.two { grid-template-columns: 1fr; } }
+@media (max-width: 520px) { .pres-bar { padding: 12px 16px; } .pres-bar nav { margin-left: 0; width: 100%; } .pres-main { padding: 16px; } }
+@media (max-width: 700px) { .pres-main section:first-child .row { flex-wrap: wrap; } }

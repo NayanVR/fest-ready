@@ -1,3 +1,4 @@
+import "../globals.css";
 import Login from "@/components/Login";
 
 export const metadata = { title: "Log in · FestReady ops" };
