@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import PlaybookAssistant from "./PlaybookAssistant";
 import type { ComponentProps, FormEvent, ReactNode } from "react";
 import type { Playbook, PlaybookRow } from "@/lib/types";
 import { playbookTemplates } from "@/lib/playbook-templates";
@@ -254,6 +255,7 @@ export default function PlaybookWizard({ playbook, existing = [], defaultOwner, 
   const [newValue, setNewValue] = useState("");
   const [probeValue, setProbeValue] = useState("");
   const [wide, setWide] = useState(true);
+  const [askAI, setAskAI] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null);
   const discovered = useRef(false);
   const review = stage === stages.length - 1;
@@ -401,6 +403,19 @@ export default function PlaybookWizard({ playbook, existing = [], defaultOwner, 
     try { return draftPlaybook(fields, identities); } catch (e) { setError({ message: (e as Error).message }); }
   }
 
+  // An AI draft fills every step, then jumps to Review so the readiness dry run checks it. The human still saves.
+  function applyAI(d: object) {
+    const draft = d as Draft;
+    setFields(initialFields(draft, defaultOwner, true));
+    setIdentities(draft.probe?.identities ?? {});
+    setAuto({});
+    setError(undefined);
+    setTried(false);
+    setStage(stages.length - 1);
+    void readiness.run(draft);
+    setAskAI(false);
+  }
+
   function go(next: number) {
     setError(undefined);
     setTried(false);
@@ -454,7 +469,10 @@ export default function PlaybookWizard({ playbook, existing = [], defaultOwner, 
             unavailable.length ? `Could not read ${unavailable.join(", ")}` : data ? "Suggestions from live Flagsmith, Prometheus and order events" : ""}
         </span>
         {catalog.error && <button type="button" onClick={() => void catalog.run({})}>Retry</button>}
+        <button type="button" className="primary" onClick={() => setAskAI(true)}>Ask AI</button>
       </div>
+      <PlaybookAssistant open={askAI} onClose={() => setAskAI(false)} onApply={applyAI}
+        draft={(() => { try { return draftPlaybook(fields, identities); } catch { return undefined; } })()} />
       <ol className="wz-progress" aria-label="Steps">
         {stages.map(({ title }, i) => {
           const reachable = i < stage || (i > stage && (blockedAt < 0 || i <= blockedAt));
